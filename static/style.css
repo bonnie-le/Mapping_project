@@ -1,0 +1,708 @@
+/* =====================================================================
+   RF Mapping Tool - stylesheet
+   Layout: the map fills the viewport; everything else floats above it.
+   The control menu is a fixed sidebar, so opening it never resizes the map.
+   ===================================================================== */
+
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+}
+
+#map {
+    width: 100vw;
+    height: 100vh;
+    background: #aad3df;
+}
+
+/* =====================================================================
+   HAMBURGER
+   ===================================================================== */
+
+#menuToggle {
+    position: fixed;
+    top: 15px;
+    right: 15px;
+    z-index: 1600;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #cfcfcf;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    transition: transform .25s ease, background .15s ease;
+}
+
+#menuToggle:hover { background: #fff; }
+
+#menuToggle span {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: #333;
+    border-radius: 2px;
+    transition: transform .25s ease, opacity .2s ease;
+}
+
+/* Open: the bars fold into an X and the button rides along the sidebar edge */
+#menuToggle.active { transform: translateX(-345px); }
+#menuToggle.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+#menuToggle.active span:nth-child(2) { opacity: 0; }
+#menuToggle.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* Hidden while html2canvas photographs the map */
+#menuToggle.capturing, #controls.capturing { display: none !important; }
+
+/* =====================================================================
+   SIDEBAR
+   ===================================================================== */
+
+#controls {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1500;
+    width: 340px;
+    max-width: 100vw;
+    display: flex;
+    flex-direction: column;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: -4px 0 18px rgba(0, 0, 0, 0.22);
+    /* Parked off-screen instead of display:none so it can slide */
+    transform: translateX(100%);
+    transition: transform .25s ease;
+}
+
+#controls.open { transform: translateX(0); }
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid #e3e6e8;
+    background: #f7f8f9;
+    flex: 0 0 auto;
+}
+
+.panel-title { font-weight: bold; font-size: 14px; color: #333; }
+
+.btn-toggle {
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 2px 9px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: bold;
+    line-height: 1.2;
+    color: #555;
+}
+.btn-toggle:hover { background: #e0e0e0; }
+
+.panel-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 10px 12px 24px;
+}
+
+/* Legacy: the old panel collapsed its body instead of sliding away */
+.panel-body.collapsed { display: none !important; }
+
+/* Account strip pinned to the bottom, outside the scrolling body so it stays
+   reachable however far down the sections you are. */
+.panel-footer {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-top: 1px solid #e3e6e8;
+    background: #f7f8f9;
+}
+
+.panel-footer .muted {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.panel-footer .btn-signout {
+    flex: 0 0 auto;
+    width: auto;
+    margin-bottom: 0;
+    padding: 6px 14px;
+    font-size: 12px;
+    background: #fff;
+    color: #555;
+    border: 1px solid #c8ced3;
+}
+.panel-footer .btn-signout:hover {
+    background: #fdecea;
+    border-color: #e6a9a3;
+    color: #a3241a;
+}
+
+/* Shift the floor bar clear of an open sidebar on a wide screen */
+body.sidebar-open #floorBar { transform: translateX(calc(-50% - 170px)); }
+
+/* =====================================================================
+   ACCORDION SECTIONS
+   ===================================================================== */
+
+.acc {
+    border: 1px solid #e0e3e6;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.acc-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    background: #f7f8f9;
+    border: none;
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+}
+.acc-head:hover { background: #f0f4f7; }
+.acc.open > .acc-head { background: #eef7f3; border-left-color: #0a7; }
+
+.acc-num {
+    flex: 0 0 auto;
+    width: 19px;
+    height: 19px;
+    border-radius: 50%;
+    background: #ccd2d6;
+    color: #fff;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 19px;
+    text-align: center;
+}
+.acc.open .acc-num { background: #0a7; }
+
+.acc-title {
+    flex: 1 1 auto;
+    font-size: 13px;
+    font-weight: bold;
+    color: #333;
+}
+
+/* Caret drawn in CSS so no icon font is needed */
+.acc-caret {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid #888;
+    border-bottom: 2px solid #888;
+    transform: rotate(-45deg);
+    transition: transform .2s ease;
+    margin-right: 3px;
+}
+.acc.open .acc-caret { transform: rotate(45deg); }
+
+.acc-body { display: none; padding: 12px; }
+.acc.open > .acc-body { display: block; }
+.acc-body > div { margin-bottom: 12px; }
+.acc-body > div:last-child { margin-bottom: 0; }
+
+/* =====================================================================
+   FORM ELEMENTS
+   ===================================================================== */
+
+label {
+    font-weight: bold;
+    font-size: 13px;
+    display: block;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+input[type="file"],
+input[type="range"],
+input[type="text"] {
+    width: 100%;
+    font-size: 12px;
+    box-sizing: border-box;
+}
+
+input[type="text"] {
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-top: 4px;
+}
+
+.hint { font-size: 11px; color: #d9534f; margin-top: 3px; font-weight: bold; }
+.muted { font-size: 11px; color: #777; }
+
+.btn {
+    background: #0275d8;
+    color: white;
+    border: none;
+    padding: 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    width: 100%;
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+.btn:hover { background: #025aa5; }
+.btn:disabled { background: #ccc; cursor: not-allowed; }
+
+.btn-success { background: #5cb85c; }
+.btn-success:hover { background: #4cae4c; }
+
+.btn-danger {
+    background: #d9534f;
+    padding: 3px 6px;
+    font-size: 10px;
+    width: auto;
+    float: right;
+}
+
+/* =====================================================================
+   DATA LAYER LIST
+   ===================================================================== */
+
+.heatmap-list {
+    border: 1px solid #ddd;
+    padding: 8px;
+    border-radius: 5px;
+    background: #fff;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.heatmap-item {
+    border-bottom: 1px dashed #ccc;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+.heatmap-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+.heatmap-header { display: flex; align-items: center; justify-content: space-between; }
+.heatmap-header label { font-weight: normal; margin-bottom: 0; cursor: pointer; font-size: 12px; }
+
+.dataset-floor-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 11px; }
+.dataset-floor-row select { flex: 1; min-width: 0; font-size: 11px; }
+
+/* =====================================================================
+   BUILDINGS AND FLOORS
+   ===================================================================== */
+
+.floor-list { max-height: 260px; overflow-y: auto; }
+
+.building-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #555;
+    margin: 8px 0 3px;
+    padding: 4px 5px;
+    background: #f1f3f5;
+    border: 1px solid #e0e3e6;
+    border-radius: 4px;
+}
+.building-head.collapsed { background: #f7f8f9; }
+
+.bh-toggle { display: flex; align-items: center; gap: 5px; cursor: pointer; flex: 1; min-width: 0; }
+.bh-toggle:hover .bh-name { color: #0a7; }
+.bh-caret { color: #888; font-size: 10px; width: 9px; }
+.bh-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bh-count { font-weight: normal; color: #999; font-size: 10px; }
+.bh-tools { display: flex; align-items: center; gap: 5px; font-weight: normal; color: #888; }
+.bh-tools label { font-weight: normal; display: flex; align-items: center; gap: 2px; margin-bottom: 0; }
+.bh-tools input[type="number"] { width: 46px; font-size: 11px; padding: 1px 2px; }
+
+.floor-group { padding-left: 4px; border-left: 2px solid #eceff1; }
+
+.floor-item {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 6px;
+    margin-bottom: 6px;
+    background: #fafafa;
+    font-size: 12px;
+}
+.floor-item.active { border-color: #0a7; background: #f2fbf7; }
+.floor-item.shown { border-color: #8ccdb4; }
+
+.floor-row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.floor-row input[type="text"] { flex: 1; min-width: 0; font-size: 12px; padding: 2px 4px; }
+
+.floor-grid {
+    display: grid;
+    grid-template-columns: auto 56px auto 62px;
+    gap: 4px;
+    align-items: center;
+    margin-top: 4px;
+    font-size: 11px;
+    color: #666;
+}
+.floor-grid input { font-size: 11px; padding: 2px 3px; width: 100%; box-sizing: border-box; }
+
+.rot-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 11px; color: #666; }
+.rot-row input { width: 58px; font-size: 11px; padding: 2px 3px; }
+.rot-row button {
+    font-size: 11px;
+    padding: 2px 5px;
+    border: 1px solid #c8c8c8;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.floor-meta { font-size: 10px; color: #888; margin-top: 3px; }
+
+/* =====================================================================
+   CONTOUR OPTIONS
+   ===================================================================== */
+
+.contour-opts {
+    border: 1px dashed #ccc;
+    border-radius: 4px;
+    padding: 6px;
+    font-size: 11px;
+    margin-top: 4px;
+}
+.contour-opts .opt-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+.contour-opts input[type="number"] { width: 64px; font-size: 11px; }
+.contour-opts label { margin-bottom: 0; }
+
+.contour-label {
+    background: rgba(255, 255, 255, 0.85);
+    border: none;
+    box-shadow: none;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 0 3px;
+    color: #333;
+}
+.contour-label::before { display: none; }
+
+/* =====================================================================
+   FLOOR BAR - fixed, so panning the map never moves it
+   ===================================================================== */
+
+#floorBar {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1200;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100vw - 24px);
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, .96);
+    border: 1px solid #cfcfcf;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .18);
+    font: 12px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    transition: transform .25s ease;
+}
+#floorBar.visible { display: flex; }
+
+#floorBar input[type="number"], #floorBar select {
+    font: inherit;
+    padding: 2px 4px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+#floorBar input[type="number"] { width: 54px; }
+#floorBar select { max-width: 150px; font-weight: 600; color: #333; background: #fff; }
+
+.fb-group { display: flex; align-items: center; gap: 5px; }
+.fb-group.hidden-building .fb-chips,
+.fb-group.hidden-building .fb-bname { opacity: .38; }
+.fb-sep { width: 1px; align-self: stretch; background: #e0e0e0; }
+.fb-label { color: #666; }
+.fb-bname { font-weight: 600; color: #333; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.fb-chips { display: flex; gap: 4px; }
+
+.fb-chip {
+    min-width: 30px;
+    padding: 4px 7px;
+    border: 1px solid #c8c8c8;
+    border-radius: 5px;
+    background: #fff;
+    cursor: pointer;
+    font-weight: 600;
+    color: #444;
+}
+.fb-chip:hover { background: #f0f7ff; }
+.fb-chip.shown { background: #d8f3e8; border-color: #8ccdb4; color: #05614a; }
+.fb-chip.active { background: #0a7; border-color: #096; color: #fff; }
+
+.fb-step, .fb-eye {
+    width: 26px;
+    height: 26px;
+    border: 1px solid #c8c8c8;
+    border-radius: 5px;
+    background: #fff;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+}
+.fb-step:disabled { opacity: .4; cursor: default; }
+.fb-eye.off { background: #f0f0f0; color: #aaa; }
+.fb-z { color: #0a7; font-weight: 600; }
+
+/* =====================================================================
+   ALIGNMENT HANDLES
+   ===================================================================== */
+
+.fp-handle {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 0 4px rgba(0, 0, 0, .55);
+    box-sizing: border-box;
+}
+.fp-handle.move { background: #0a7; }
+.fp-handle.width { background: #e67e22; }
+.fp-handle.height { background: #3498db; }
+
+/* =====================================================================
+   IMPORT DIALOG
+   ===================================================================== */
+
+#importModal {
+    position: fixed;
+    inset: 0;
+    z-index: 1700;
+    background: rgba(0, 0, 0, .4);
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+#importModal.visible { display: flex; }
+
+#importModal .modal {
+    background: #fff;
+    border-radius: 8px;
+    padding: 14px;
+    width: min(520px, 92vw);
+    max-height: 82vh;
+    overflow-y: auto;
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .3);
+}
+#importModal h3 { margin: 0 0 4px; font-size: 15px; }
+#importModal .hint { color: #666; font-size: 11px; margin-bottom: 10px; font-weight: normal; }
+
+.import-row {
+    display: grid;
+    grid-template-columns: 1fr 120px 74px;
+    gap: 6px;
+    align-items: center;
+    padding: 7px 0;
+    border-top: 1px solid #eee;
+}
+.import-row .fname { font-size: 11px; color: #333; overflow: hidden; text-overflow: ellipsis; }
+.import-row input, .import-row select {
+    font: inherit;
+    padding: 3px 4px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 0;
+}
+.import-head { display: grid; grid-template-columns: 1fr 120px 74px; gap: 6px; font-size: 11px; color: #777; }
+
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.modal-actions button {
+    font: inherit;
+    padding: 6px 12px;
+    border-radius: 5px;
+    border: 1px solid #bbb;
+    background: #f5f5f5;
+    cursor: pointer;
+}
+.modal-actions button.primary { background: #0a7; border-color: #096; color: #fff; }
+
+/* =====================================================================
+   LEAFLET CONTROLS AND LEGEND
+   ===================================================================== */
+
+.leaflet-top.leaflet-left { margin-top: 10px; }
+
+.mode-control {
+    background: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    font-size: 12px;
+    font-weight: bold;
+    user-select: none;
+}
+.mode-control label { margin-right: 8px; cursor: pointer; margin-bottom: 0; }
+.mode-control.collapsed .mode-body { display: none; }
+.mode-control.collapsed .mode-toggle-btn::before { content: "+"; }
+.mode-control:not(.collapsed) .mode-toggle-btn::before { content: "\2212"; }
+.mode-control .mode-toggle-btn { font-size: 0; }
+
+.legend-control {
+    background: rgba(255, 255, 255, 0.95);
+    padding: 10px 14px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    font-size: 11px;
+    color: #333;
+    max-width: 220px;
+}
+
+.legend-title {
+    font-weight: bold;
+    margin-bottom: 6px;
+    text-align: center;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 3px;
+}
+
+.legend-step-bar {
+    display: flex;
+    height: 12px;
+    border-radius: 3px;
+    overflow: hidden;
+    border: 1px solid #888;
+    margin-bottom: 4px;
+}
+.legend-step {
+    flex: 1;
+    text-align: center;
+    font-size: 9px;
+    line-height: 12px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 2px #000;
+}
+.legend-labels { display: flex; justify-content: space-between; font-size: 9px; color: #555; }
+
+/* =====================================================================
+   PHONE
+   ===================================================================== */
+
+@media only screen and (max-width: 700px) {
+    #controls {
+        width: 100vw;
+        box-shadow: none;
+    }
+
+    /* On a phone the sidebar covers the screen, so the hamburger would sit
+       on top of it. The header's x button closes it instead. */
+    #menuToggle.active { opacity: 0; pointer-events: none; transform: none; }
+
+    body.sidebar-open #floorBar { transform: translateX(-50%); }
+
+    .btn, input[type="file"] {
+        padding: 10px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .acc-title { font-size: 14px; }
+
+    #floorBar { top: 8px; font-size: 11px; }
+
+    /* ---- Bottom corners ----
+       The attribution strip runs along the very bottom, so lift both bottom
+       corners clear of it. Each corner is capped at a bit under half the
+       screen so the legend on the left and the layer picker on the right can
+       never grow into each other. */
+    .leaflet-bottom.leaflet-left,
+    .leaflet-bottom.leaflet-right {
+        bottom: 24px !important;
+        max-width: 48vw;
+    }
+    .leaflet-bottom.leaflet-left { left: 2px; }
+    .leaflet-bottom.leaflet-right { right: 2px; }
+
+    .leaflet-control-attribution {
+        font-size: 9px;
+        padding: 0 4px;
+        max-height: 20px;
+        overflow: hidden;
+    }
+
+    /* Legend: narrower, smaller type, and it scrolls instead of growing
+       taller than the screen. */
+    .legend-control {
+        max-width: 100%;
+        padding: 6px 8px;
+        font-size: 10px;
+        line-height: 1.35;
+    }
+    .legend-title { font-size: 11px; margin-bottom: 4px; padding-bottom: 2px; }
+    .legend-labels { font-size: 8px; gap: 2px; }
+    .legend-labels span { flex: 1; }
+    .legend-step { font-size: 8px; }
+    .legend-control .heatmap-gradient-bar,
+    .legend-control .legend-step-bar { height: 10px !important; }
+
+    /* Layer picker: stays a tap target when closed, scrolls when open. */
+    .leaflet-control-layers-toggle {
+        width: 38px !important;
+        height: 38px !important;
+        background-size: 22px 22px !important;
+    }
+    .leaflet-control-layers-expanded {
+        max-width: 48vw;
+        max-height: 46vh;
+        overflow-y: auto;
+        font-size: 12px;
+        padding: 8px 10px;
+    }
+    .leaflet-control-layers-expanded label { font-size: 12px; margin-bottom: 0; }
+
+    /* Zoom, search and the display mode box sit top-left; keep them compact so
+       the floor bar above them still has room. */
+    .mode-control { font-size: 11px; padding: 6px 9px; }
+}
+
+/* Very small screens: the legend is the first thing to give up space. */
+@media only screen and (max-width: 380px) {
+    .legend-control { font-size: 9px; padding: 5px 6px; }
+    .legend-title { font-size: 10px; }
+    .leaflet-control-layers-expanded { max-width: 56vw; }
+}

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sign in - RF Mapping Tool</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --green: #0a7; --green-dark: #096; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            background: #eef1f4;
+            font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+            color: #333; padding: 16px;
+        }
+        .card {
+            width: 100%; max-width: 380px; background: #fff;
+            border-radius: 10px; padding: 26px 24px;
+            box-shadow: 0 6px 26px rgba(0,0,0,.12);
+        }
+        h1 { margin: 0 0 4px; font-size: 19px; }
+        .sub { margin: 0 0 18px; font-size: 12px; color: #777; }
+        .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+        .tab {
+            flex: 1; padding: 7px 0; text-align: center; cursor: pointer;
+            border: 1px solid #d5d9dd; border-radius: 6px; background: #f7f8f9;
+            font-size: 13px; font-weight: 600; color: #666;
+        }
+        .tab.active { background: var(--green); border-color: var(--green-dark); color: #fff; }
+        label { display: block; font-size: 12px; font-weight: 600; margin: 10px 0 3px; color: #555; }
+        input {
+            width: 100%; padding: 9px 10px; font: inherit;
+            border: 1px solid #ccd1d6; border-radius: 6px; background: #fff;
+        }
+        input:focus { outline: none; border-color: var(--green); }
+        button.primary {
+            width: 100%; margin-top: 16px; padding: 10px;
+            font: inherit; font-weight: 600; color: #fff; cursor: pointer;
+            background: var(--green); border: 1px solid var(--green-dark); border-radius: 6px;
+        }
+        button.primary:disabled { opacity: .6; cursor: default; }
+        .link {
+            display: block; margin-top: 12px; text-align: center;
+            font-size: 12px; color: #667; cursor: pointer; text-decoration: underline;
+        }
+        .msg { margin-top: 14px; padding: 9px 10px; border-radius: 6px; font-size: 12px; display: none; }
+        .msg.show { display: block; }
+        .msg.error { background: #fdecea; color: #a3241a; border: 1px solid #f5c2bd; }
+        .msg.ok { background: #e7f7f1; color: #05614a; border: 1px solid #9fdcc7; }
+        .hint { margin-top: 16px; font-size: 11px; color: #999; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>RF Mapping Tool</h1>
+    <p class="sub">Sign in to open your saved sites. Each account sees only its own data.</p>
+
+    <div class="tabs">
+        <div class="tab active" id="tabSignIn">Sign in</div>
+        <div class="tab" id="tabSignUp">Create account</div>
+    </div>
+
+    <label for="email">Email</label>
+    <input type="email" id="email" autocomplete="email" placeholder="you@example.com">
+
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password" placeholder="At least 6 characters">
+
+    <button class="primary" id="submitBtn">Sign in</button>
+    <span class="link" id="forgotLink">Forgot your password?</span>
+
+    <div class="msg" id="msg"></div>
+    <div class="hint">Data is stored in Supabase and protected by row level security.</div>
+</div>
+
+<script>
+    // Injected by Flask from .env - see app.py
+    window.SUPABASE_URL = "{{ supabase_url }}";
+    window.SUPABASE_ANON_KEY = "{{ supabase_anon_key }}";
+    window.APP_PAGE = "{{ url_for('index') }}";
+    window.LOGIN_PAGE = "{{ url_for('login') }}";
+</script>
+
+<script>
+    "use strict";
+
+    const els = {
+        tabIn: document.getElementById('tabSignIn'),
+        tabUp: document.getElementById('tabSignUp'),
+        email: document.getElementById('email'),
+        password: document.getElementById('password'),
+        submit: document.getElementById('submitBtn'),
+        forgot: document.getElementById('forgotLink'),
+        msg: document.getElementById('msg')
+    };
+
+    // A missing #msg element must not take the whole login page down with it,
+    // so fall back to the console instead of throwing.
+    function say(text, kind) {
+        if (!els.msg) { console[kind === 'error' ? 'error' : 'log'](text); return; }
+        els.msg.textContent = text;
+        els.msg.className = 'msg show ' + (kind || 'ok');
+    }
+    function clearMsg() { if (els.msg) els.msg.className = 'msg'; }
+
+    // Fail loudly instead of leaving a dead button: an empty URL means .env
+    // was not picked up, which is the most common setup mistake.
+    if (!window.SUPABASE_URL || !window.SUPABASE_ANON_KEY) {
+        say('Supabase is not configured. Fill in .env and restart app.py.', 'error');
+        els.submit.disabled = true;
+    }
+
+    const sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+    let mode = 'signin';
+
+    // Tells the Flask side that a session exists, so it can route straight to
+    // the tool. It holds no token - only a flag.
+    function setSessionCookie() {
+        document.cookie = 'sb-session=1; path=/; max-age=' + (60 * 60 * 24 * 7) + '; SameSite=Lax';
+    }
+
+    function enterApp() {
+        setSessionCookie();
+        window.location.replace(window.APP_PAGE);
+    }
+
+    function setMode(next) {
+        mode = next;
+        els.tabIn.classList.toggle('active', mode === 'signin');
+        els.tabUp.classList.toggle('active', mode === 'signup');
+        els.submit.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
+        els.password.setAttribute('autocomplete', mode === 'signin' ? 'current-password' : 'new-password');
+        clearMsg();
+    }
+    els.tabIn.addEventListener('click', () => setMode('signin'));
+    els.tabUp.addEventListener('click', () => setMode('signup'));
+
+    // Already signed in? Go straight to the tool.
+    (async () => {
+        const { data } = await sb.auth.getSession();
+        if (data.session) enterApp();
+    })();
+
+    async function submit() {
+        const email = els.email.value.trim();
+        const password = els.password.value;
+        if (!email || !password) { say('Enter your email and password.', 'error'); return; }
+
+        els.submit.disabled = true;
+        clearMsg();
+        try {
+            if (mode === 'signin') {
+                const { error } = await sb.auth.signInWithPassword({ email: email, password: password });
+                if (error) throw error;
+                enterApp();
+            } else {
+                const { data, error } = await sb.auth.signUp({ email: email, password: password });
+                if (error) throw error;
+                // With email confirmation on (the Supabase default) there is no
+                // session yet, so point the user at their inbox instead.
+                if (data.session) enterApp();
+                else say('Account created. Confirm the address from your inbox, then sign in.', 'ok');
+            }
+        } catch (err) {
+            say(err.message || 'Something went wrong.', 'error');
+        } finally {
+            els.submit.disabled = false;
+        }
+    }
+
+    els.submit.addEventListener('click', submit);
+    [els.email, els.password].forEach(i =>
+        i.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); }));
+
+    els.forgot.addEventListener('click', async () => {
+        const email = els.email.value.trim();
+        if (!email) { say('Type your email above first.', 'error'); return; }
+        const redirectTo = window.location.origin + window.LOGIN_PAGE;
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectTo });
+        if (error) say(error.message, 'error');
+        else say('Password reset link sent. Check your inbox.', 'ok');
+    });
+
+    setMode('signin');
+</script>
+
+</body>
+</html>

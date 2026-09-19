@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NBCC Fredericton - Multi-Building Heatmap, Route &amp; 3D Contour Tool</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+    </style>
+</head>
+
+<body>
+
+<div id="floorBar"></div>
+
+<div id="importModal">
+  <div class="modal">
+    <h3>Where do these plans go?</h3>
+    <div class="hint">Pick the building and the level for each floor plan. Level 1 is the ground floor; use -1, -2 for basements.</div>
+    <div class="import-head"><span>File</span><span>Building</span><span>Level</span></div>
+    <div id="importRows"></div>
+    <div class="modal-actions">
+      <button id="importCancel">Cancel</button>
+      <button id="importConfirm" class="primary">Add floors</button>
+    </div>
+  </div>
+</div>
+
+
+<button type="button" id="menuToggle" aria-label="Open the control menu" aria-expanded="false">
+  <span></span><span></span><span></span>
+</button>
+
+<!-- Sidebar. -->
+<aside id="controls">
+  <div class="panel-header">
+    <span class="panel-title">Control Menu</span>
+    <button type="button" class="btn-toggle" id="closeControlsBtn" aria-label="Close">&times;</button>
+  </div>
+
+  <div id="controlsBody" class="panel-body">
+    <section class="acc open">
+      <button type="button" class="acc-head">
+        <span class="acc-num">1</span>
+        <span class="acc-title">Floor Plans</span>
+        <span class="acc-caret"></span>
+      </button>
+      <div class="acc-body">
+        <input type="file" id="imgUpload" accept="image/*" multiple>
+        <div id="floorList" class="floor-list" style="margin-top:6px;">
+          <i class="muted">No floor plan uploaded yet.</i>
+        </div>
+        <div style="margin-top:4px;">
+          <label style="font-weight:normal;font-size:11px;display:block;">
+            <input type="checkbox" id="lockAspectChk" checked> Lock aspect ratio while dragging
+          </label>
+          <label style="font-weight:normal;font-size:11px;display:block;">
+            <input type="checkbox" id="freeSkewChk"> Free skew (corners move independently)
+          </label>
+          <label style="font-weight:normal;font-size:11px;display:block;">
+            <input type="checkbox" id="showAllFloorsChk"> Show every floor of every visible building
+          </label>
+          <button class="btn" id="copyAlignBtn" style="margin-top:4px;" disabled>Copy this alignment to the whole building</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="acc">
+      <button type="button" class="acc-head">
+        <span class="acc-num">2</span>
+        <span class="acc-title">Scan Files</span>
+        <span class="acc-caret"></span>
+      </button>
+      <div class="acc-body">
+      <input type="file" id="csvUpload" accept=".csv, text/csv, .xlsx, .xls" multiple>
+      </div>
+    </section>
+
+    <section class="acc">
+      <button type="button" class="acc-head">
+        <span class="acc-num">3</span>
+        <span class="acc-title">Data Layers</span>
+        <span class="acc-caret"></span>
+      </button>
+      <div class="acc-body">
+      <div id="heatmapList" class="heatmap-list">
+        <i style="font-size:11px;color:#777;">No CSV files uploaded yet.</i>
+      </div>
+      <label style="font-weight:normal;font-size:11px;margin-top:4px;display:block;">
+        <input type="checkbox" id="alwaysShowOutdoorChk" checked> Always show outdoor GPS points
+      </label>
+      </div>
+    </section>
+
+    <section class="acc">
+      <button type="button" class="acc-head">
+        <span class="acc-num">4</span>
+        <span class="acc-title">Floor Plan Opacity</span>
+        <span class="acc-caret"></span>
+      </button>
+      <div class="acc-body">
+      <input type="range" id="opacitySlider" min="0.1" max="1" step="0.1" value="0.7">
+      </div>
+    </section>
+
+    <section class="acc">
+      <button type="button" class="acc-head">
+        <span class="acc-num">5</span>
+        <span class="acc-title">Contour Settings</span>
+        <span class="acc-caret"></span>
+      </button>
+      <div class="acc-body">
+      <div class="contour-opts">
+        <div class="opt-row">
+          <label style="font-weight:normal;"><input type="checkbox" id="ct3D" checked> Use floors above and below (3D)</label>
+        </div>
+        <div class="opt-row"><span>Vertical weight (x)</span><input type="number" id="ctVWeight" value="4" min="1" max="20" step="0.5"></div>
+        <div class="opt-row"><span>Step between lines (dB)</span><input type="number" id="ctInterval" value="5" min="1" max="20" step="1"></div>
+        <div class="opt-row"><span>Grid resolution (cells)</span><input type="number" id="ctGrid" value="160" min="40" max="400" step="10"></div>
+        <div class="opt-row"><span>Search radius (m, 0 = auto)</span><input type="number" id="ctRadius" value="0" min="0" max="500" step="1"></div>
+        <div class="opt-row"><span>IDW power</span><input type="number" id="ctPower" value="2" min="1" max="5" step="0.5"></div>
+        <div class="opt-row">
+          <label style="font-weight:normal;"><input type="checkbox" id="ctFill" checked> Colour fill</label>
+          <label style="font-weight:normal;"><input type="checkbox" id="ctLines" checked> Isolines</label>
+        </div>
+        <div class="opt-row">
+          <label style="font-weight:normal;"><input type="checkbox" id="ctLabels" checked> Line labels</label>
+          <label style="font-weight:normal;"><input type="checkbox" id="ctPoints"> Sample points</label>
+        </div>
+        <div class="muted">The contour is a horizontal slice at the height of the active floor. A single floor, or outdoor data, gives a flat 2D contour.</div>
+      </div>
+      </div>
+    </section>
+
+    <section class="acc">
+      <button type="button" class="acc-head">
+        <span class="acc-num">6</span>
+        <span class="acc-title">Cloud (Supabase)</span>
+        <span class="acc-caret"></span>
+      </button>
+      <div class="acc-body">
+      <select id="cloudProjectSelect" style="width:100%;margin-top:4px;font-size:11px;"></select>
+      <input type="text" id="cloudProjectName" placeholder="Site name" style="width:100%;margin-top:4px;">
+      <div class="muted" id="cloudCurrent">No site open</div>
+      <button class="btn btn-success" id="cloudSaveBtn">Save to cloud</button>
+      <button class="btn" id="cloudSaveAsBtn">Save as a new copy</button>
+      <button class="btn" id="cloudLoadBtn">Load selected site</button>
+      <button class="btn" id="cloudNewBtn">New empty site</button>
+      <button class="btn btn-danger" id="cloudDeleteBtn">Delete selected site</button>
+      <div class="muted" id="cloudStatus" style="margin-top:4px;"></div>
+      </div>
+    </section>
+
+    <section class="acc">
+      <button type="button" class="acc-head">
+        <span class="acc-num">7</span>
+        <span class="acc-title">Export</span>
+        <span class="acc-caret"></span>
+      </button>
+      <div class="acc-body">      <button class="btn" id="exportBtn" disabled>Export All GPS Data (CSV)</button>
+      <button class="btn btn-success" id="saveMapBtn" disabled>Save Map as Image (PNG)</button>
+      <button class="btn" id="fitBtn" disabled>Fit Map to Data</button>
+    
+      </div>
+    </section>
+  </div>
+
+  <div class="panel-footer">
+    <span class="muted" id="cloudUser">Not signed in</span>
+    <button type="button" class="btn btn-signout" id="cloudSignOutBtn">Sign out</button>
+  </div>
+</aside>
+
+<div id="map"></div>
+
+<script>
+    "use strict";
+
+    const NBCC_FREDERICTON_EXACT = [45.9430, -66.6439];
+    const DEFAULT_FLOOR_HEIGHT = 3.5;   // metres between storeys, editable per building
+    const M_PER_DEG_LAT = 110540;
+
+    const myCanvasRenderer = L.canvas({ padding: 0.5 });
+
+    const map = L.map('map', { center: NBCC_FREDERICTON_EXACT, zoom: 18, minZoom: 2, preferCanvas: true });
+
+    /* MAP */
+    const esri = (service, attribution, maxNative) => L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/' + service + '/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 21, maxNativeZoom: maxNative || 19, crossOrigin: true,
+            attribution: attribution
+        });
+
+    const baseMaps = {
+        'Buildings (OSM France)': L.tileLayer(
+            'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+                subdomains: 'abc', maxZoom: 21, maxNativeZoom: 20, crossOrigin: true,
+                attribution: '&copy; OpenStreetMap contributors, tiles OSM France'
+            }),
+        'Buildings (CyclOSM)': L.tileLayer(
+            'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {
+                subdomains: 'abc', maxZoom: 21, maxNativeZoom: 20, crossOrigin: true,
+                attribution: '&copy; OpenStreetMap contributors, CyclOSM'
+            }),
+        'Satellite (Esri)': esri('World_Imagery', 'Imagery &copy; Esri, Maxar, Earthstar Geographics'),
+        'Street (Esri)': esri('World_Street_Map', 'Tiles &copy; Esri'),
+        'Topographic (Esri)': esri('World_Topo_Map', 'Tiles &copy; Esri'),
+        'Grey canvas (Esri)': esri('Canvas/World_Light_Gray_Base', 'Tiles &copy; Esri', 16),
+        'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 21, maxNativeZoom: 19, crossOrigin: true,
+            attribution: '&copy; OpenStreetMap contributors'
+        })
+    };
+
+    const overlayMaps = {
+        'Labels over satellite': esri('Reference/World_Boundaries_and_Places',
+                                      'Labels &copy; Esri')
+    };
+
+    baseMaps['Buildings (OSM France)'].addTo(map);
+    L.control.layers(baseMaps, overlayMaps, { position: 'bottomright' }).addTo(map);
+
+    L.Control.geocoder({ position: 'topleft', defaultMarkGeocode: false, placeholder: 'Search location...' })
+        .on('markgeocode', (e) => map.fitBounds(e.geocode.bbox))
+        .addTo(map);
+
+    /* LOCAL METRIC FRAME*/
+    function metricScale(lat) {
+        return { mLat: M_PER_DEG_LAT, mLng: 111320 * Math.cos(lat * Math.PI / 180) || 1 };
+    }
+    function toXY(ll, ref, k) {
+        return { x: (ll.lng - ref.lng) * k.mLng, y: (ll.lat - ref.lat) * k.mLat };
+    }
+    function toLL(p, ref, k) {
+        return { lat: ref.lat + p.y / k.mLat, lng: ref.lng + p.x / k.mLng };
+    }
+
+    /* ROTATED IMAGE OVERLAY */
+    const RotatedOverlay = L.Layer.extend({
+        initialize: function (url, corners, options) {
+            this._url = url;
+            this._corners = corners;                 // {tl, tr, bl} as plain {lat, lng}
+            L.setOptions(this, options || {});
+        },
+
+        onAdd: function () {
+            if (!this._image) {
+                const img = this._image = L.DomUtil.create('img', 'leaflet-image-layer');
+                img.style.position = 'absolute';
+                img.style.transformOrigin = '0 0';
+                img.style.left = '0';
+                img.style.top = '0';
+                img.style.pointerEvents = 'none';
+                // Plans restored from Supabase Storage are cross-origin; without
+                // this the PNG export taints the canvas and fails.
+                if (!/^data:/.test(this._url)) img.crossOrigin = 'anonymous';
+                img.style.opacity = (this.options.opacity === undefined) ? 1 : this.options.opacity;
+                img.alt = '';
+                img.src = this._url;
+            }
+            this.getPane().appendChild(this._image);
+            this._reset();
+        },
+
+        onRemove: function () { L.DomUtil.remove(this._image); },
+
+        getEvents: function () { return { zoom: this._reset, viewreset: this._reset }; },
+
+        setCorners: function (corners) { this._corners = corners; this._reset(); return this; },
+        setOpacity: function (o) { if (this._image) this._image.style.opacity = o; return this; },
+
+        _reset: function () {
+            if (!this._map || !this._image) return;
+            const w = this.options.imgW, h = this.options.imgH;
+            if (!w || !h) return;
+
+            const tl = this._map.latLngToLayerPoint(this._corners.tl);
+            const tr = this._map.latLngToLayerPoint(this._corners.tr);
+            const bl = this._map.latLngToLayerPoint(this._corners.bl);
+
+            // Map image pixel (0,0)->tl, (w,0)->tr, (0,h)->bl
+            const a = (tr.x - tl.x) / w, b = (tr.y - tl.y) / w;
+            const c = (bl.x - tl.x) / h, d = (bl.y - tl.y) / h;
+
+            this._image.style.width = w + 'px';
+            this._image.style.height = h + 'px';
+            this._image.style.transform =
+                'matrix(' + a + ',' + b + ',' + c + ',' + d + ',' + tl.x + ',' + tl.y + ')';
+        }
+    });
+
+    /* DISPLAY MODE */
+    let currentRenderMode = 'heatmap';
+    const modeControl = L.control({ position: 'topleft' });
+    modeControl.onAdd = function () {
+        const div = L.DomUtil.create('div', 'mode-control leaflet-bar');
+        div.innerHTML =
+            '<div class="mode-header" onclick="this.parentElement.classList.toggle(\'collapsed\')" ' +
+            'style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:bold;gap:8px;">' +
+            '<span>Display Mode</span><span class="mode-toggle-btn" style="font-size:12px;">-</span></div>' +
+            '<div class="mode-body" style="margin-top:6px;">' +
+            '<label style="display:block;margin-bottom:2px;"><input type="radio" name="renderMode" value="heatmap" checked> Heatmap</label>' +
+            '<label style="display:block;margin-bottom:2px;"><input type="radio" name="renderMode" value="route"> Route Map</label>' +
+            '<label style="display:block;"><input type="radio" name="renderMode" value="contour"> Contour Map</label>' +
+            '</div>';
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+        return div;
+    };
+    modeControl.addTo(map);
+
+    document.ondrop = (e) => e.preventDefault();
+    document.querySelectorAll('input[name="renderMode"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            currentRenderMode = e.target.value;
+            updateAllLayers();
+        });
+    });
+
+    /* STATE */
+    let buildings = [];    // {id, name, floorHeight, visible, shownFloorId}
+    let floorPlans = [];   // {id, buildingId, level, elevation, name, fileName, url, imgW, imgH, tl, tr, bl, opacity}
+    let activeFloorId = null;   // the floor with the alignment handles; also the contour slice
+    let heatmapDatasets = [];
+
+    let handleMove = null, handleWidth = null, handleHeight = null;
+    let floorOverlays = {};     // floorId -> RotatedOverlay
+    let activeMapGroup = L.layerGroup().addTo(map);
+
+    const handleIcon = (kind) => L.divIcon({
+        className: '',
+        html: '<div class="fp-handle ' + kind + '"></div>',
+        iconSize: [16, 16], iconAnchor: [8, 8]
+    });
+
+    function getRsrpCategory(rsrp) {
+        if (rsrp >= -84) return { color: '#00FF00', name: 'Strong' };
+        if (rsrp >= -105) return { color: '#FFFF00', name: 'Medium' };
+        return { color: '#FF0000', name: 'Weak' };
+    }
+    function rsrpColor(v, minV, maxV) {
+        const lo = (typeof minV === 'number') ? minV : -120;
+        const hi = (typeof maxV === 'number') ? maxV : -60;
+        let t = (v - lo) / ((hi - lo) || 1);
+        t = Math.max(0, Math.min(1, t));
+        let r, g;
+        if (t < 0.5) { r = 255; g = Math.round(510 * t); }
+        else { r = Math.round(510 * (1 - t)); g = 255; }
+        return { r: r, g: g, b: 0 };
+    }
+    function rgbToHex(c) {
+        const h = (n) => n.toString(16).padStart(2, '0');
+        return '#' + h(c.r) + h(c.g) + h(c.b);
+    }
+
+    /* BUILDINGS & FLOORS */
+    function getBuilding(id) { return buildings.find(b => b.id === id) || null; }
+    function getFloor(id) { return floorPlans.find(f => f.id === id) || null; }
+    function getActiveFloor() { return getFloor(activeFloorId); }
+    function activeBuildingId() {
+        const f = getActiveFloor();
+        return f ? f.buildingId : (buildings.length ? buildings[0].id : null);
+    }
+    function floorsOf(buildingId) {
+        return floorPlans.filter(f => f.buildingId === buildingId).sort((a, b) => a.level - b.level);
+    }
+
+    function floorElevation(f) {
+        if (!f) return 0;
+        if (typeof f.elevation === 'number' && !isNaN(f.elevation)) return f.elevation;
+        const b = getBuilding(f.buildingId);
+        const h = (b && b.floorHeight) ? b.floorHeight : DEFAULT_FLOOR_HEIGHT;
+        return f.level > 0 ? (f.level - 1) * h : f.level * h;
+    }
+    function levelLabel(level) { return level < 0 ? 'B' + Math.abs(level) : String(level); }
+
+    function addBuilding(name) {
+        const id = 'bd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+        buildings.forEach(b => { b.collapsed = true; }); // keep the panel short
+        buildings.push({
+            id: id,
+            name: name || ('Building ' + (buildings.length + 1)),
+            floorHeight: DEFAULT_FLOOR_HEIGHT,
+            visible: true,
+            shownFloorId: null,
+            collapsed: false
+        });
+        return id;
+    }
+
+    // Every building can be visible at the same time; each one shows one floor
+    // (or all of its floors when the global switch is on).
+    function isFloorShown(floorId) {
+        const f = getFloor(floorId);
+        if (!f) return false;
+        const b = getBuilding(f.buildingId);
+        if (!b || !b.visible) return false;
+        if (document.getElementById('showAllFloorsChk').checked) return true;
+        return b.shownFloorId === f.id;
+    }
+
+    /* FLOOR PLAN GEOMETRY */
+    function getFloorFrame(f) {
+        if (!f) return null;
+        return { tl: f.tl, tr: f.tr, bl: f.bl, imgW: f.imgW, imgH: f.imgH };
+    }
+    function frameCorners(f) {
+        // Fourth corner: br = tr + bl - tl
+        return [
+            [f.tl.lat, f.tl.lng],
+            [f.tr.lat, f.tr.lng],
+            [f.tr.lat + f.bl.lat - f.tl.lat, f.tr.lng + f.bl.lng - f.tl.lng],
+            [f.bl.lat, f.bl.lng]
+        ];
+    }
+
+    // width, height and rotation (degrees clockwise, 0 = north-up) of a plan
+    function frameGeom(f) {
+        const ref = f.tl;
+        const k = metricScale(ref.lat);
+        const wVec = toXY(f.tr, ref, k);
+        const hVec = toXY(f.bl, ref, k);
+        const widthM = Math.hypot(wVec.x, wVec.y);
+        const heightM = Math.hypot(hVec.x, hVec.y);
+        const rotationDeg = -Math.atan2(wVec.y, wVec.x) * 180 / Math.PI;
+        const centreXY = { x: (wVec.x + hVec.x) / 2, y: (wVec.y + hVec.y) / 2 };
+        return { widthM: widthM, heightM: heightM, rotationDeg: rotationDeg, centre: toLL(centreXY, ref, k) };
+    }
+
+    // Rebuild the three corners from top-left + size + rotation
+    function setFrameFromTL(f, tlLL, widthM, heightM, rotationDeg) {
+        const k = metricScale(tlLL.lat);
+        const a = -rotationDeg * Math.PI / 180;
+        const ux = { x: Math.cos(a), y: Math.sin(a) };   // along the top edge
+        const uy = { x: Math.sin(a), y: -Math.cos(a) };  // down the left edge
+        f.tl = { lat: tlLL.lat, lng: tlLL.lng };
+        f.tr = toLL({ x: ux.x * widthM, y: ux.y * widthM }, tlLL, k);
+        f.bl = toLL({ x: uy.x * heightM, y: uy.y * heightM }, tlLL, k);
+    }
+    function setFrameFromCentre(f, centreLL, widthM, heightM, rotationDeg) {
+        const k = metricScale(centreLL.lat);
+        const a = -rotationDeg * Math.PI / 180;
+        const ux = { x: Math.cos(a), y: Math.sin(a) };
+        const uy = { x: Math.sin(a), y: -Math.cos(a) };
+        const tlXY = { x: -(ux.x * widthM + uy.x * heightM) / 2, y: -(ux.y * widthM + uy.y * heightM) / 2 };
+        setFrameFromTL(f, toLL(tlXY, centreLL, k), widthM, heightM, rotationDeg);
+    }
+    function rotateFloorTo(f, rotationDeg) {
+        const g = frameGeom(f);
+        setFrameFromCentre(f, g.centre, g.widthM, g.heightM, rotationDeg);
+    }
+
+    /* IMPORT */
+    let pendingImports = [];
+
+    document.getElementById('imgUpload').addEventListener('change', function (e) {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        pendingImports = [];
+        let done = 0;
+
+        files.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = function (ev) {
+                const url = ev.target.result;
+                const probe = new Image();
+                probe.onload = function () {
+                    // The real pixel size sets the pixel -> GPS scale, so measure it
+                    pendingImports.push({
+                        fileName: file.name, url: url,
+                        imgW: probe.naturalWidth, imgH: probe.naturalHeight,
+                        guessLevel: guessLevel(file.name)
+                    });
+                    done++;
+                    if (done === files.length) openImportDialog();
+                };
+                probe.src = url;
+            };
+            reader.readAsDataURL(file);
+        });
+        this.value = '';
+    });
+
+    // Keywords a file name may use for a storey.
+    const BASEMENT_KEYWORDS = ['b', 'bsmt', 'basement', 'sub'];
+    const FLOOR_KEYWORDS = ['floor', 'flr', 'fl', 'f', 'level', 'lvl', 'lv', 'storey', 'story'];
+
+    function guessLevel(fileName) {
+        const base = fileName.replace(/\.[^.]+$/, '');
+        let m = base.match(new RegExp('\\b(?:' + BASEMENT_KEYWORDS.join('|') + ')\\s*[-_ ]?(\\d{1,2})\\b', 'i'));
+        if (m) return -parseInt(m[1], 10);
+        m = base.match(new RegExp('(?:' + FLOOR_KEYWORDS.join('|') + ')\\s*[-_ ]?(\\d{1,2})', 'i'));
+        if (m) return parseInt(m[1], 10);
+        m = base.match(/(\d{1,2})/);
+        if (m) return parseInt(m[1], 10);
+        return null;
+    }
+
+    function openImportDialog() {
+        const rows = document.getElementById('importRows');
+        rows.innerHTML = '';
+
+        const buildingOptions = (sel) => {
+            let html = '';
+            buildings.forEach(b => {
+                html += '<option value="' + b.id + '"' + (b.id === sel ? ' selected' : '') + '>' + b.name + '</option>';
+            });
+            html += '<option value="__new__"' + (!buildings.length ? ' selected' : '') + '>+ New building...</option>';
+            return html;
+        };
+
+        const defaultBuilding = activeBuildingId() || '__new__';
+        const usedLevels = new Set(floorPlans.filter(f => f.buildingId === defaultBuilding).map(f => f.level));
+
+        pendingImports.forEach((p, i) => {
+            let lvl = p.guessLevel;
+            if (lvl === null) { lvl = 1; while (usedLevels.has(lvl)) lvl++; }
+            usedLevels.add(lvl);
+
+            const div = document.createElement('div');
+            div.className = 'import-row';
+            div.innerHTML =
+                '<div class="fname" title="' + p.fileName + '">' + p.fileName +
+                '<br><span style="color:#999;">' + p.imgW + ' x ' + p.imgH + ' px</span></div>' +
+                '<div><select id="imp_b_' + i + '">' + buildingOptions(defaultBuilding) + '</select>' +
+                '<input type="text" id="imp_bn_' + i + '" placeholder="Building name" style="margin-top:4px;display:none;"></div>' +
+                '<input type="number" id="imp_l_' + i + '" value="' + lvl + '" step="1">';
+            rows.appendChild(div);
+
+            const sel = document.getElementById('imp_b_' + i);
+            const nameInput = document.getElementById('imp_bn_' + i);
+            const sync = () => { nameInput.style.display = sel.value === '__new__' ? 'block' : 'none'; };
+            sel.addEventListener('change', sync);
+            sync();
+        });
+
+        document.getElementById('importModal').classList.add('visible');
+    }
+
+    document.getElementById('importCancel').addEventListener('click', () => {
+        pendingImports = [];
+        document.getElementById('importModal').classList.remove('visible');
+    });
+
+    document.getElementById('importConfirm').addEventListener('click', () => {
+        const newBuildingIds = {};
+        pendingImports.forEach((p, i) => {
+            const sel = document.getElementById('imp_b_' + i);
+            const level = parseInt(document.getElementById('imp_l_' + i).value, 10) || 1;
+            let bId = sel.value;
+            if (bId === '__new__') {
+                const typed = (document.getElementById('imp_bn_' + i).value || '').trim();
+                const key = typed.toLowerCase() || '__unnamed__';
+                if (newBuildingIds[key]) bId = newBuildingIds[key];
+                else { bId = addBuilding(typed); newBuildingIds[key] = bId; }
+            }
+            addFloorPlan(p, bId, level);
+        });
+
+        pendingImports = [];
+        document.getElementById('importModal').classList.remove('visible');
+        refreshAll();
+        fitMapToAllData();
+        checkExportStatus();
+    });
+
+    function addFloorPlan(p, buildingId, level) {
+        const id = 'fl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        const f = {
+            id: id, buildingId: buildingId, level: level, elevation: null,
+            name: 'Floor ' + levelLabel(level),
+            fileName: p.fileName, url: p.url, imgW: p.imgW, imgH: p.imgH,
+            tl: null, tr: null, bl: null,
+            opacity: parseFloat(document.getElementById('opacitySlider').value)
+        };
+
+        // Floors of one building stack, so inherit the alignment of a sibling
+        const sibling = floorPlans.find(x => x.buildingId === buildingId);
+        if (sibling) {
+            f.tl = { lat: sibling.tl.lat, lng: sibling.tl.lng };
+            f.tr = { lat: sibling.tr.lat, lng: sibling.tr.lng };
+            f.bl = { lat: sibling.bl.lat, lng: sibling.bl.lng };
+        } else {
+            const c = map.getCenter();
+            const widthM = 80;
+            setFrameFromCentre(f, { lat: c.lat, lng: c.lng }, widthM, widthM * p.imgH / p.imgW, 0);
+        }
+
+        floorPlans.push(f);
+        const b = getBuilding(buildingId);
+        if (b && !b.shownFloorId) b.shownFloorId = id;
+        if (!activeFloorId) activeFloorId = id;
+    }
+
+    function setActiveFloor(id) {
+        const f = getFloor(id);
+        if (!f) return;
+        activeFloorId = id;
+        const b = getBuilding(f.buildingId);
+        if (b) { b.shownFloorId = id; b.visible = true; b.collapsed = false; }
+        barBuildingId = f.buildingId;
+        document.getElementById('opacitySlider').value = f.opacity;
+        refreshAll();
+    }
+    window.setActiveFloor = setActiveFloor;
+
+    window.toggleBuildingVisible = function (buildingId) {
+        const b = getBuilding(buildingId);
+        if (!b) return;
+        b.visible = !b.visible;
+        // Keep the alignment handles on a floor that is actually on screen
+        if (!b.visible) {
+            const still = floorPlans.find(f => isFloorShown(f.id));
+            activeFloorId = still ? still.id : null;
+        } else if (!activeFloorId) {
+            activeFloorId = b.shownFloorId || (floorsOf(b.id)[0] || {}).id || null;
+        }
+        refreshAll();
+    };
+
+    window.removeFloor = function (id) {
+        const i = floorPlans.findIndex(f => f.id === id);
+        if (i === -1) return;
+        const bId = floorPlans[i].buildingId;
+        floorPlans.splice(i, 1);
+        heatmapDatasets.forEach(d => { if (d.floorId === id) d.floorId = null; });
+
+        const b = getBuilding(bId);
+        if (b && b.shownFloorId === id) b.shownFloorId = (floorsOf(bId)[0] || {}).id || null;
+        if (!floorPlans.some(f => f.buildingId === bId)) buildings = buildings.filter(x => x.id !== bId);
+        if (activeFloorId === id) activeFloorId = floorPlans.length ? floorPlans[0].id : null;
+
+        refreshAll();
+        checkExportStatus();
+    };
+
+    function refreshAll() {
+        renderFloorControls();
+        renderHeatmapControls();
+        renderFloorBar();
+        rebuildFloorOverlays();
+        updateAllLayers();
+    }
+
+    /* CONTROL PANEL: FLOORS */
+    function renderFloorControls() {
+        const box = document.getElementById('floorList');
+        const active = getActiveFloor();
+        document.getElementById('copyAlignBtn').disabled = !active || floorsOf(active.buildingId).length < 2;
+
+        if (!floorPlans.length) {
+            box.innerHTML = '<i class="muted">No floor plan uploaded yet.</i>';
+            return;
+        }
+        box.innerHTML = '';
+
+        buildings.forEach(b => {
+            const list = floorsOf(b.id);
+            if (!list.length) return;
+
+            // The building header doubles as a drop-down toggle, so a building with
+            // a dozen plans takes one line until you open it.
+            const collapsed = !!b.collapsed;
+            const head = document.createElement('div');
+            head.className = 'building-head' + (collapsed ? ' collapsed' : '');
+            head.innerHTML =
+                '<span class="bh-toggle" id="btog_' + b.id + '" title="Show or hide the floors of this building">' +
+                    '<span class="bh-caret">' + (collapsed ? '&#9656;' : '&#9662;') + '</span>' +
+                    '<span class="bh-name">' + b.name + '</span>' +
+                    '<span class="bh-count">' + list.length + (list.length === 1 ? ' floor' : ' floors') + '</span>' +
+                '</span>' +
+                '<span class="bh-tools">' +
+                    '<label title="Show or hide this building on the map"><input type="checkbox" id="bvis_' + b.id + '"' +
+                    (b.visible ? ' checked' : '') + '> show</label>' +
+                    '<input type="number" id="bh_' + b.id + '" value="' + b.floorHeight +
+                    '" min="1" max="12" step="0.1" title="Storey height in metres"> m' +
+                '</span>';
+            box.appendChild(head);
+
+            document.getElementById('btog_' + b.id).addEventListener('click', () => {
+                b.collapsed = !b.collapsed;
+                renderFloorControls();
+            });
+            document.getElementById('bvis_' + b.id).addEventListener('change', () => toggleBuildingVisible(b.id));
+            document.getElementById('bh_' + b.id).addEventListener('change', (e) => {
+                b.floorHeight = parseFloat(e.target.value) || DEFAULT_FLOOR_HEIGHT;
+                renderFloorBar();
+                if (currentRenderMode === 'contour') updateAllLayers(); else updateLegendUI();
+            });
+
+            const group = document.createElement('div');
+            group.className = 'floor-group';
+            box.appendChild(group);
+            if (collapsed) { group.style.display = 'none'; return; }
+
+            list.forEach(f => {
+                const g = frameGeom(f);
+                const div = document.createElement('div');
+                div.className = 'floor-item' + (f.id === activeFloorId ? ' active' : (isFloorShown(f.id) ? ' shown' : ''));
+                div.innerHTML =
+                    '<div class="floor-row">' +
+                        '<label style="font-weight:normal;display:flex;align-items:center;gap:4px;flex:1;min-width:0;">' +
+                            '<input type="radio" name="activeFloor"' + (f.id === activeFloorId ? ' checked' : '') +
+                            ' onchange="setActiveFloor(\'' + f.id + '\')">' +
+                            '<input type="text" id="fname_' + f.id + '" value="' + f.name + '">' +
+                        '</label>' +
+                        '<button class="btn btn-danger" onclick="removeFloor(\'' + f.id + '\')">Delete</button>' +
+                    '</div>' +
+                    '<div class="floor-grid">' +
+                        '<span>Level</span><input type="number" id="flevel_' + f.id + '" value="' + f.level + '" step="1">' +
+                        '<span>Height (m)</span><input type="number" id="felev_' + f.id + '" value="' +
+                            (f.elevation === null ? '' : f.elevation) + '" step="0.1" placeholder="' + floorElevation(f).toFixed(1) + '">' +
+                    '</div>' +
+                    '<div class="rot-row">' +
+                        '<span>Rotation</span>' +
+                        '<input type="number" id="frot_' + f.id + '" value="' + g.rotationDeg.toFixed(1) + '" step="0.5"> deg' +
+                        '<button id="frotm_' + f.id + '" title="Rotate 90 degrees anticlockwise">-90</button>' +
+                        '<button id="frotp_' + f.id + '" title="Rotate 90 degrees clockwise">+90</button>' +
+                        '<button id="frot0_' + f.id + '" title="Back to north-up">0</button>' +
+                    '</div>' +
+                    '<div class="floor-meta">' + f.fileName + ' - ' + f.imgW + ' x ' + f.imgH + ' px, ' +
+                        g.widthM.toFixed(1) + ' x ' + g.heightM.toFixed(1) + ' m on the ground</div>';
+                group.appendChild(div);
+
+                document.getElementById('fname_' + f.id).addEventListener('input', (e) => {
+                    f.name = e.target.value;
+                    renderHeatmapControls(); renderFloorBar(); updateLegendUI();
+                });
+                document.getElementById('flevel_' + f.id).addEventListener('change', (e) => {
+                    f.level = parseInt(e.target.value, 10) || 0;
+                    renderFloorControls(); renderFloorBar();
+                    if (currentRenderMode === 'contour') updateAllLayers();
+                });
+                document.getElementById('felev_' + f.id).addEventListener('change', (e) => {
+                    const v = e.target.value.trim();
+                    f.elevation = v === '' ? null : (parseFloat(v) || 0);
+                    renderFloorBar();
+                    if (currentRenderMode === 'contour') updateAllLayers();
+                });
+
+                const applyRotation = (deg) => {
+                    rotateFloorTo(f, deg);
+                    syncFloorOverlay(f);
+                    if (f.id === activeFloorId) placeHandles();
+                    renderFloorControls();
+                    updateAllLayers();
+                };
+                document.getElementById('frot_' + f.id).addEventListener('change', (e) => {
+                    applyRotation(parseFloat(e.target.value) || 0);
+                });
+                document.getElementById('frotm_' + f.id).addEventListener('click', () => applyRotation(g.rotationDeg - 90));
+                document.getElementById('frotp_' + f.id).addEventListener('click', () => applyRotation(g.rotationDeg + 90));
+                document.getElementById('frot0_' + f.id).addEventListener('click', () => applyRotation(0));
+            });
+        });
+    }
+
+    /* FLOOR BAR: ONE BUILDING AT A TIME */
+    let barBuildingId = null;
+
+    function renderFloorBar() {
+        const bar = document.getElementById('floorBar');
+        if (!floorPlans.length) { bar.classList.remove('visible'); bar.innerHTML = ''; return; }
+        bar.classList.add('visible');
+
+        if (!getBuilding(barBuildingId)) barBuildingId = activeBuildingId();
+        const b = getBuilding(barBuildingId);
+        if (!b) { bar.classList.remove('visible'); return; }
+
+        const list = floorsOf(b.id);
+        const idx = list.findIndex(f => f.id === b.shownFloorId);
+        const active = getActiveFloor();
+        let html = '';
+
+        if (buildings.length > 1) {
+            html += '<select id="fbBuilding" title="Building">';
+            buildings.forEach(x => {
+                if (!floorsOf(x.id).length) return;
+                html += '<option value="' + x.id + '"' + (x.id === b.id ? ' selected' : '') + '>' +
+                        x.name + (x.visible ? '' : ' (hidden)') + '</option>';
+            });
+            html += '</select>';
+        } else {
+            html += '<span class="fb-bname" title="' + b.name + '">' + b.name + '</span>';
+        }
+
+        html += '<button class="fb-eye' + (b.visible ? '' : ' off') + '" id="fbEye"' +
+                ' title="Show or hide this building on the map">' + (b.visible ? '&#128065;' : '&#8856;') + '</button>';
+        html += '<div class="fb-sep"></div>';
+
+        html += '<div class="fb-group' + (b.visible ? '' : ' hidden-building') + '">';
+        html += '<button class="fb-step" data-step="down"' + (idx <= 0 ? ' disabled' : '') +
+                ' title="Floor below">&#9660;</button>';
+        html += '<div class="fb-chips">';
+        list.forEach(f => {
+            const cls = (f.id === activeFloorId) ? 'active' : (isFloorShown(f.id) ? 'shown' : '');
+            html += '<button class="fb-chip ' + cls + '" data-floor="' + f.id + '" title="' +
+                    f.name + ' - ' + floorElevation(f).toFixed(1) + ' m">' + levelLabel(f.level) + '</button>';
+        });
+        html += '</div>';
+        html += '<button class="fb-step" data-step="up"' +
+                ((idx === list.length - 1 || idx === -1) ? ' disabled' : '') + ' title="Floor above">&#9650;</button>';
+        html += '</div>';
+
+        html += '<div class="fb-sep"></div><span class="fb-label">Storey height</span>' +
+                '<input type="number" id="fbHeight" value="' + b.floorHeight + '" min="1" max="12" step="0.1"> m';
+        html += '<div class="fb-sep"></div><span class="fb-label">Now at</span> <span class="fb-z">' +
+                (active ? active.name + ' - ' + floorElevation(active).toFixed(1) + ' m' : '-') + '</span>';
+
+        bar.innerHTML = html;
+
+        const bSel = document.getElementById('fbBuilding');
+        if (bSel) bSel.addEventListener('change', (e) => {
+            barBuildingId = e.target.value;
+            // Hand the alignment handles to this building right away, so its plan is
+            // editable without having to click a floor chip first.
+            const target = getBuilding(barBuildingId);
+            const to = (target && target.shownFloorId) || (floorsOf(barBuildingId)[0] || {}).id;
+            if (to) setActiveFloor(to); else renderFloorBar();
+        });
+
+        document.getElementById('fbEye').addEventListener('click', () => toggleBuildingVisible(b.id));
+
+        bar.querySelectorAll('.fb-chip').forEach(btn =>
+            btn.addEventListener('click', () => setActiveFloor(btn.dataset.floor)));
+
+        bar.querySelectorAll('.fb-step').forEach(btn => btn.addEventListener('click', () => {
+            const next = btn.dataset.step === 'up' ? idx + 1 : idx - 1;
+            if (next >= 0 && next < list.length) setActiveFloor(list[next].id);
+        }));
+
+        document.getElementById('fbHeight').addEventListener('change', (e) => {
+            b.floorHeight = parseFloat(e.target.value) || DEFAULT_FLOOR_HEIGHT;
+            renderFloorControls(); renderFloorBar();
+            if (currentRenderMode === 'contour') updateAllLayers(); else updateLegendUI();
+        });
+    }
+
+    // Page Up / Page Down walk the active building
+    document.addEventListener('keydown', (e) => {
+        const tag = (e.target.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+        if (e.key !== 'PageUp' && e.key !== 'PageDown') return;
+        const list = floorsOf(activeBuildingId());
+        const idx = list.findIndex(f => f.id === activeFloorId);
+        if (idx === -1) return;
+        const next = e.key === 'PageUp' ? idx + 1 : idx - 1;
+        if (next >= 0 && next < list.length) { e.preventDefault(); setActiveFloor(list[next].id); }
+    });
+
+    /* OVERLAYS & THE THREE ALIGNMENT HANDLES */
+    function rebuildFloorOverlays() {
+        Object.keys(floorOverlays).forEach(id => {
+            map.removeLayer(floorOverlays[id]);
+            delete floorOverlays[id];
+        });
+        [handleMove, handleWidth, handleHeight].forEach(m => { if (m) map.removeLayer(m); });
+        handleMove = handleWidth = handleHeight = null;
+
+        floorPlans.forEach(f => {
+            if (!isFloorShown(f.id)) return;
+            const isActive = f.id === activeFloorId;
+            const ov = new RotatedOverlay(f.url, { tl: f.tl, tr: f.tr, bl: f.bl }, {
+                imgW: f.imgW, imgH: f.imgH,
+                opacity: isActive ? f.opacity : f.opacity * 0.6
+            });
+            ov.addTo(map);
+            floorOverlays[f.id] = ov;
+        });
+
+        const active = getActiveFloor();
+        if (!active || !isFloorShown(active.id)) return;
+
+        handleMove = L.marker([active.tl.lat, active.tl.lng], { icon: handleIcon('move'), draggable: true, zIndexOffset: 900 })
+            .bindTooltip('Drag to move the whole plan', { direction: 'top' }).addTo(map);
+        handleWidth = L.marker([active.tr.lat, active.tr.lng], { icon: handleIcon('width'), draggable: true, zIndexOffset: 900 })
+            .bindTooltip('Drag to rotate and scale', { direction: 'top' }).addTo(map);
+        handleHeight = L.marker([active.bl.lat, active.bl.lng], { icon: handleIcon('height'), draggable: true, zIndexOffset: 900 })
+            .bindTooltip('Drag to set the depth', { direction: 'top' }).addTo(map);
+
+        handleMove.on('drag', () => onHandleDrag('move'));
+        handleWidth.on('drag', () => onHandleDrag('width'));
+        handleHeight.on('drag', () => onHandleDrag('height'));
+        [handleMove, handleWidth, handleHeight].forEach(m => m.on('dragend', () => {
+            renderFloorControls();
+            updateAllLayers();
+        }));
+    }
+
+    let dragFrame = null;
+    function onHandleDrag(which) {
+        applyHandle(which);
+        if (dragFrame) cancelAnimationFrame(dragFrame);
+        dragFrame = requestAnimationFrame(() => {
+            const f = getActiveFloor();
+            if (f) syncFloorOverlay(f);
+        });
+    }
+
+    // Turn a dragged handle into new corners.
+    //  - move   : translate the whole plan
+    //  - width  : rotate + scale along the top edge
+    //  - height : set the depth, perpendicular to the top edge
+    // "Free skew" lets the corners move independently instead.
+    function applyHandle(which) {
+        const f = getActiveFloor();
+        if (!f) return;
+        const freeSkew = document.getElementById('freeSkewChk').checked;
+        const lockAspect = document.getElementById('lockAspectChk').checked;
+        const aspect = f.imgH / f.imgW;
+
+        if (which === 'move') {
+            const p = handleMove.getLatLng();
+            const dLat = p.lat - f.tl.lat, dLng = p.lng - f.tl.lng;
+            f.tl = { lat: p.lat, lng: p.lng };
+            f.tr = { lat: f.tr.lat + dLat, lng: f.tr.lng + dLng };
+            f.bl = { lat: f.bl.lat + dLat, lng: f.bl.lng + dLng };
+            handleWidth.setLatLng([f.tr.lat, f.tr.lng]);
+            handleHeight.setLatLng([f.bl.lat, f.bl.lng]);
+            return;
+        }
+
+        if (freeSkew) {
+            if (which === 'width') f.tr = { lat: handleWidth.getLatLng().lat, lng: handleWidth.getLatLng().lng };
+            else f.bl = { lat: handleHeight.getLatLng().lat, lng: handleHeight.getLatLng().lng };
+            return;
+        }
+
+        const ref = f.tl;
+        const k = metricScale(ref.lat);
+        const g = frameGeom(f);
+
+        if (which === 'width') {
+            const v = toXY(handleWidth.getLatLng(), ref, k);
+            const widthM = Math.max(1, Math.hypot(v.x, v.y));
+            const rotationDeg = -Math.atan2(v.y, v.x) * 180 / Math.PI;
+            const heightM = lockAspect ? widthM * aspect : g.heightM;
+            setFrameFromTL(f, ref, widthM, heightM, rotationDeg);
+        } else {
+            const a = -g.rotationDeg * Math.PI / 180;
+            const uy = { x: Math.sin(a), y: -Math.cos(a) };
+            const v = toXY(handleHeight.getLatLng(), ref, k);
+            const heightM = Math.max(1, v.x * uy.x + v.y * uy.y); // project onto the down axis
+            const widthM = lockAspect ? heightM / aspect : g.widthM;
+            setFrameFromTL(f, ref, widthM, heightM, g.rotationDeg);
+        }
+
+        handleWidth.setLatLng([f.tr.lat, f.tr.lng]);
+        handleHeight.setLatLng([f.bl.lat, f.bl.lng]);
+    }
+
+    function placeHandles() {
+        const f = getActiveFloor();
+        if (!f || !handleMove) return;
+        handleMove.setLatLng([f.tl.lat, f.tl.lng]);
+        handleWidth.setLatLng([f.tr.lat, f.tr.lng]);
+        handleHeight.setLatLng([f.bl.lat, f.bl.lng]);
+    }
+
+    function syncFloorOverlay(f) {
+        const ov = floorOverlays[f.id];
+        if (ov) ov.setCorners({ tl: f.tl, tr: f.tr, bl: f.bl });
+    }
+
+    document.getElementById('showAllFloorsChk').addEventListener('change', () => {
+        rebuildFloorOverlays();
+        updateAllLayers();
+    });
+
+    document.getElementById('copyAlignBtn').addEventListener('click', () => {
+        const f = getActiveFloor();
+        if (!f) return;
+        floorsOf(f.buildingId).forEach(other => {
+            if (other.id === f.id) return;
+            other.tl = { lat: f.tl.lat, lng: f.tl.lng };
+            other.tr = { lat: f.tr.lat, lng: f.tr.lng };
+            other.bl = { lat: f.bl.lat, lng: f.bl.lng };
+        });
+        refreshAll();
+    });
+
+    document.getElementById('opacitySlider').addEventListener('input', function (e) {
+        const f = getActiveFloor();
+        const v = parseFloat(e.target.value);
+        if (!f) return;
+        f.opacity = v;
+        if (floorOverlays[f.id]) floorOverlays[f.id].setOpacity(v);
+    });
+
+    /* CSV / EXCEL UPLOAD */
+    document.getElementById('csvUpload').addEventListener('change', function (e) {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        let processedCount = 0;
+
+        const finish = () => {
+            processedCount++;
+            if (processedCount === files.length) {
+                renderHeatmapControls();
+                updateAllLayers();
+                fitMapToAllData();
+                checkExportStatus();
+            }
+        };
+
+        files.forEach((file) => {
+            const fileName = file.name;
+            if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                const reader = new FileReader();
+                reader.onload = function (evt) {
+                    const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    processCSVData({ data: XLSX.utils.sheet_to_json(sheet, { defval: '' }) }, fileName);
+                    finish();
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                Papa.parse(file, {
+                    header: true, skipEmptyLines: true, dynamicTyping: true,
+                    complete: function (results) { processCSVData(results, fileName); finish(); }
+                });
+            }
+        });
+        this.value = '';
+    });
+
+    function processCSVData(results, fileName) {
+        const rawData = results.data;
+        if (!rawData || rawData.length === 0) return;
+        const keys = Object.keys(rawData[0]);
+
+        const latKey = keys.find(k => {
+            const l = k.toLowerCase().trim();
+            return l === 'lat' || l === 'latitude' || l.includes('lat');
+        });
+        const lngKey = keys.find(k => {
+            const l = k.toLowerCase().trim();
+            return l === 'lon' || l === 'lng' || l === 'longitude' || l.includes('lng') || l.includes('lon');
+        });
+        const rsrpKey = keys.find(k => {
+            const l = k.toLowerCase();
+            return l.includes('rsrp') || l.includes('signal') || l.includes('dbm') || l.includes('power');
+        });
+
+        let hasAnyOutdoorRow = false;
+        if (latKey && lngKey) {
+            for (let i = 0; i < rawData.length; i++) {
+                const la = parseFloat(rawData[i][latKey]);
+                const lo = parseFloat(rawData[i][lngKey]);
+                if (!isNaN(la) && Math.abs(la) <= 90 && !isNaN(lo) && Math.abs(lo) <= 180 && (la !== 0 || lo !== 0)) {
+                    hasAnyOutdoorRow = true; break;
+                }
+            }
+        }
+
+        heatmapDatasets.push({
+            id: 'hm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            fileName: fileName, rawData: rawData,
+            note: fileName.replace(/\.(csv|xlsx|xls)$/i, ''),
+            visible: true, isOutdoorGPS: hasAnyOutdoorRow,
+            latKey: latKey, lngKey: lngKey, rsrpKey: rsrpKey,
+            floorId: matchFloorByFileName(fileName) || activeFloorId
+        });
+    }
+
+    function matchFloorByFileName(fileName) {
+        const lvl = guessLevel(fileName);
+        if (lvl === null) return null;
+        const hit = floorsOf(activeBuildingId()).find(f => f.level === lvl);
+        return hit ? hit.id : null;
+    }
+
+    function renderHeatmapControls() {
+        const container = document.getElementById('heatmapList');
+        if (heatmapDatasets.length === 0) {
+            container.innerHTML = '<i style="font-size:11px;color:#777;">No CSV files uploaded yet.</i>';
+            return;
+        }
+
+        const floorOptions = (selected) => {
+            let html = '<option value="">- no floor (outdoor only) -</option>';
+            buildings.forEach(b => {
+                const list = floorsOf(b.id);
+                if (!list.length) return;
+                html += '<optgroup label="' + b.name + '">';
+                list.forEach(f => {
+                    html += '<option value="' + f.id + '"' + (f.id === selected ? ' selected' : '') + '>' + f.name + '</option>';
+                });
+                html += '</optgroup>';
+            });
+            return html;
+        };
+
+        container.innerHTML = '';
+        heatmapDatasets.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'heatmap-item';
+            div.innerHTML =
+                '<div class="heatmap-header">' +
+                    '<label><input type="checkbox" id="chk_' + item.id + '"' + (item.visible ? ' checked' : '') + '>' +
+                    '<b>' + (index + 1) + '. ' + item.fileName + '</b> ' +
+                    (item.isOutdoorGPS ? '<span style="font-size:10px;color:#0a7;">(GPS)</span>'
+                                       : '<span style="font-size:10px;color:#888;">(Indoor)</span>') + '</label>' +
+                    '<button class="btn btn-danger" onclick="removeHeatmap(\'' + item.id + '\')">Delete</button>' +
+                '</div>' +
+                '<input type="text" id="note_' + item.id + '" value="' + item.note + '" placeholder="Add note...">' +
+                '<div class="dataset-floor-row"><span>Floor:</span>' +
+                '<select id="floor_' + item.id + '">' + floorOptions(item.floorId) + '</select></div>';
+            container.appendChild(div);
+
+            document.getElementById('chk_' + item.id).addEventListener('change', (e) => {
+                item.visible = e.target.checked; updateAllLayers();
+            });
+            document.getElementById('note_' + item.id).addEventListener('input', (e) => {
+                item.note = e.target.value; updateLegendUI();
+            });
+            document.getElementById('floor_' + item.id).addEventListener('change', (e) => {
+                item.floorId = e.target.value || null; updateAllLayers();
+            });
+        });
+    }
+
+    window.removeHeatmap = function (id) {
+        const index = heatmapDatasets.findIndex(d => d.id === id);
+        if (index !== -1) {
+            heatmapDatasets.splice(index, 1);
+            renderHeatmapControls();
+            updateAllLayers();
+            checkExportStatus();
+        }
+    };
+
+    /* 
+       PIXEL -> GPS (affine, so rotation and skew are honoured)
+       A pixel (X, Y) on the plan becomes
+           P = TL + u * (TR - TL) + v * (BL - TL)
+       with u = X / imgW and v = Y / imgH. No Y flip is needed here. */
+    function firstNumeric(row, keys) {
+        for (const k of keys) {
+            if (k === undefined || k === null || !(k in row)) continue;
+            const v = parseFloat(row[k]);
+            if (!isNaN(v)) return v;
+        }
+        return NaN;
+    }
+
+    function pixelToLatLng(frame, px, py) {
+        const u = px / frame.imgW;
+        const v = py / frame.imgH;
+        return {
+            lat: frame.tl.lat + u * (frame.tr.lat - frame.tl.lat) + v * (frame.bl.lat - frame.tl.lat),
+            lng: frame.tl.lng + u * (frame.tr.lng - frame.tl.lng) + v * (frame.bl.lng - frame.tl.lng)
+        };
+    }
+
+    function getProcessedPoints(item, frame) {
+        if (!item.rawData || item.rawData.length === 0) return [];
+        const out = [];
+
+        item.rawData.forEach(row => {
+            const rsrp = parseFloat(row[item.rsrpKey]);
+            if (isNaN(rsrp)) return;
+
+            const cat = getRsrpCategory(rsrp);
+            let gpsLat, gpsLng, isOutdoorPoint = false;
+
+            if (item.latKey && item.lngKey) {
+                const rowLat = parseFloat(row[item.latKey]);
+                const rowLng = parseFloat(row[item.lngKey]);
+                if (!isNaN(rowLat) && Math.abs(rowLat) <= 90 && !isNaN(rowLng) && Math.abs(rowLng) <= 180 &&
+                    (rowLat !== 0 || rowLng !== 0)) {
+                    gpsLat = rowLat; gpsLng = rowLng; isOutdoorPoint = true;
+                }
+            }
+
+            if (!isOutdoorPoint && frame) {
+                const pixelX = firstNumeric(row, ['Longitude', 'X', 'x', 'PixelX', 'pixel_x', item.lngKey]);
+                const pixelY = firstNumeric(row, ['Latitude', 'Y', 'y', 'PixelY', 'pixel_y', item.latKey]);
+                if (!isNaN(pixelX) && !isNaN(pixelY)) {
+                    const ll = pixelToLatLng(frame, pixelX, pixelY);
+                    gpsLat = ll.lat; gpsLng = ll.lng;
+                }
+            }
+
+            if (gpsLat !== undefined && gpsLng !== undefined && !isNaN(gpsLat) && !isNaN(gpsLng) &&
+                !(gpsLat === 0 && gpsLng === 0)) {
+                out.push({ lat: gpsLat, lng: gpsLng, rsrp: rsrp, category: cat, isOutdoor: isOutdoorPoint });
+            }
+        });
+        return out;
+    }
+
+    function getVisiblePoints(item) {
+        const floor = getFloor(item.floorId);
+        const pts = getProcessedPoints(item, getFloorFrame(floor));
+        const keepOutdoor = document.getElementById('alwaysShowOutdoorChk').checked;
+        return pts.filter(pt => pt.isOutdoor
+            ? (keepOutdoor || isFloorShown(item.floorId) || !item.floorId)
+            : isFloorShown(item.floorId));
+    }
+
+    /*
+       CONTOUR - 3D IDW + marching squares
+         1. Every sample gets an (x, y, z): x/y from lat/lng, z from the
+            elevation of its floor. Outdoor data with no floor sits at z = 0.
+         2. A horizontal grid is built at the elevation of the active floor.
+         3. Nodes are estimated with IDW over a 3D distance
+               d = sqrt(dx^2 + dy^2 + (k * dz)^2)
+            where k is the vertical weight: a slab attenuates far more than
+            the same distance of open air, so a metre upwards counts as k
+            metres sideways. Nodes with nothing in range stay empty.
+         4. The grid is painted into a canvas overlay and run through
+            marching squares for the isolines.
+       One floor, or the 3D switch off, makes every dz zero and the whole
+       thing collapses to a plain 2D contour. */
+    function mPerDegLng(lat) { return 111320 * Math.cos(lat * Math.PI / 180); }
+
+    function collectSamples(use3D) {
+        const pts = [];
+        const keepOutdoor = document.getElementById('alwaysShowOutdoorChk').checked;
+
+        heatmapDatasets.forEach(item => {
+            if (!item.visible) return;
+            const floor = getFloor(item.floorId);
+            const z = floorElevation(floor);
+            getProcessedPoints(item, getFloorFrame(floor)).forEach(pt => {
+                if (!use3D) {
+                    const ok = pt.isOutdoor
+                        ? (keepOutdoor || isFloorShown(item.floorId) || !item.floorId)
+                        : isFloorShown(item.floorId);
+                    if (!ok) return;
+                }
+                pts.push({
+                    lat: pt.lat, lng: pt.lng, rsrp: pt.rsrp,
+                    z: (pt.isOutdoor && !item.floorId) ? 0 : z
+                });
+            });
+        });
+        return pts;
+    }
+
+    function buildIdwGrid(points, opts, sliceZ) {
+        if (!points.length) return null;
+
+        let aMinLat = Infinity, aMaxLat = -Infinity, aMinLng = Infinity, aMaxLng = -Infinity;
+        points.forEach(p => {
+            if (p.lat < aMinLat) aMinLat = p.lat;
+            if (p.lat > aMaxLat) aMaxLat = p.lat;
+            if (p.lng < aMinLng) aMinLng = p.lng;
+            if (p.lng > aMaxLng) aMaxLng = p.lng;
+        });
+        const midLat = (aMinLat + aMaxLat) / 2;
+        const mLng = mPerDegLng(midLat) || 1;
+        const wAll = Math.max(1, (aMaxLng - aMinLng) * mLng);
+        const hAll = Math.max(1, (aMaxLat - aMinLat) * M_PER_DEG_LAT);
+        const radius = opts.radius > 0
+            ? opts.radius
+            : Math.max(2, Math.min(120, Math.sqrt(wAll * wAll + hAll * hAll) / 18));
+
+        const vW = opts.vWeight;
+        const candidates = points.filter(p => Math.abs(p.z - sliceZ) * vW < radius);
+        if (candidates.length < 3) return null;
+
+        let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+        candidates.forEach(p => {
+            if (p.lat < minLat) minLat = p.lat;
+            if (p.lat > maxLat) maxLat = p.lat;
+            if (p.lng < minLng) minLng = p.lng;
+            if (p.lng > maxLng) maxLng = p.lng;
+        });
+
+        minLat -= radius / M_PER_DEG_LAT; maxLat += radius / M_PER_DEG_LAT;
+        minLng -= radius / mLng;          maxLng += radius / mLng;
+
+        const widthM = Math.max(1, (maxLng - minLng) * mLng);
+        const heightM = Math.max(1, (maxLat - minLat) * M_PER_DEG_LAT);
+
+        let cols, rows;
+        if (widthM >= heightM) { cols = opts.cells; rows = Math.max(8, Math.round(opts.cells * heightM / widthM)); }
+        else { rows = opts.cells; cols = Math.max(8, Math.round(opts.cells * widthM / heightM)); }
+
+        const cellLat = radius / M_PER_DEG_LAT;
+        const cellLng = radius / mLng;
+        const buckets = new Map();
+        candidates.forEach((p, idx) => {
+            const k = Math.floor((p.lat - minLat) / cellLat) + '|' + Math.floor((p.lng - minLng) / cellLng);
+            if (!buckets.has(k)) buckets.set(k, []);
+            buckets.get(k).push(idx);
+        });
+
+        const values = new Float32Array(cols * rows);
+        let vMin = Infinity, vMax = -Infinity;
+
+        for (let r = 0; r < rows; r++) {
+            const lat = minLat + (r / (rows - 1)) * (maxLat - minLat);  // r = 0 is the south edge
+            const bi = Math.floor((lat - minLat) / cellLat);
+            for (let c = 0; c < cols; c++) {
+                const lng = minLng + (c / (cols - 1)) * (maxLng - minLng);
+                const bj = Math.floor((lng - minLng) / cellLng);
+
+                let num = 0, den = 0, exact = null;
+                for (let di = -1; di <= 1 && exact === null; di++) {
+                    for (let dj = -1; dj <= 1 && exact === null; dj++) {
+                        const list = buckets.get((bi + di) + '|' + (bj + dj));
+                        if (!list) continue;
+                        for (let n = 0; n < list.length; n++) {
+                            const p = candidates[list[n]];
+                            const dy = (p.lat - lat) * M_PER_DEG_LAT;
+                            const dx = (p.lng - lng) * mLng;
+                            const dz = (p.z - sliceZ) * vW;
+                            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            if (d > radius) continue;
+                            if (d < 0.25) { exact = p.rsrp; break; }
+                            const w = 1 / Math.pow(d, opts.power);
+                            num += w * p.rsrp; den += w;
+                        }
+                    }
+                }
+                const v = exact !== null ? exact : (den > 0 ? num / den : NaN);
+                values[r * cols + c] = v;
+                if (!isNaN(v)) { if (v < vMin) vMin = v; if (v > vMax) vMax = v; }
+            }
+        }
+        if (!isFinite(vMin)) return null;
+
+        return {
+            values: values, cols: cols, rows: rows,
+            minLat: minLat, maxLat: maxLat, minLng: minLng, maxLng: maxLng,
+            vMin: vMin, vMax: vMax, used: candidates.length
+        };
+    }
+
+    function gridToImageOverlay(grid, opacity) {
+        const canvas = document.createElement('canvas');
+        canvas.width = grid.cols; canvas.height = grid.rows;
+        const ctx = canvas.getContext('2d');
+        const img = ctx.createImageData(grid.cols, grid.rows);
+
+        for (let r = 0; r < grid.rows; r++) {
+            const y = grid.rows - 1 - r;   // canvas row 0 is the top = north
+            for (let c = 0; c < grid.cols; c++) {
+                const v = grid.values[r * grid.cols + c];
+                const o = (y * grid.cols + c) * 4;
+                if (isNaN(v)) { img.data[o + 3] = 0; continue; }
+                const col = rsrpColor(v, grid.vMin, grid.vMax);
+                img.data[o] = col.r; img.data[o + 1] = col.g; img.data[o + 2] = col.b; img.data[o + 3] = 200;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        return L.imageOverlay(canvas.toDataURL('image/png'),
+            L.latLngBounds([grid.minLat, grid.minLng], [grid.maxLat, grid.maxLng]),
+            { opacity: opacity, interactive: false });
+    }
+
+    // Corner bits: 1 bottom-left, 2 bottom-right, 4 top-right, 8 top-left.
+    // Values say which cell edges the isoline crosses (B/R/T/L).
+    const MS_TABLE = {
+        1: [['L','B']], 2: [['B','R']], 3: [['L','R']], 4: [['R','T']],
+        5: [['L','T'],['B','R']],
+        6: [['B','T']], 7: [['L','T']], 8: [['L','T']], 9: [['B','T']],
+        10: [['L','B'],['R','T']],
+        11: [['R','T']], 12: [['L','R']], 13: [['B','R']], 14: [['L','B']]
+    };
+
+    function marchingSquares(grid, level) {
+        const values = grid.values, cols = grid.cols, rows = grid.rows;
+        const segs = [];
+        const at = (r, c) => values[r * cols + c];
+        const lerp = (v0, v1) => {
+            const d = v1 - v0;
+            return Math.abs(d) < 1e-9 ? 0.5 : (level - v0) / d;
+        };
+
+        for (let r = 0; r < rows - 1; r++) {
+            for (let c = 0; c < cols - 1; c++) {
+                const v00 = at(r, c), v10 = at(r, c + 1), v11 = at(r + 1, c + 1), v01 = at(r + 1, c);
+                if (isNaN(v00) || isNaN(v10) || isNaN(v11) || isNaN(v01)) continue;
+
+                let idx = 0;
+                if (v00 >= level) idx |= 1;
+                if (v10 >= level) idx |= 2;
+                if (v11 >= level) idx |= 4;
+                if (v01 >= level) idx |= 8;
+                const cases = MS_TABLE[idx];
+                if (!cases) continue;
+
+                const pt = (edge) => {
+                    switch (edge) {
+                        case 'B': return [c + lerp(v00, v10), r];
+                        case 'R': return [c + 1, r + lerp(v10, v11)];
+                        case 'T': return [c + lerp(v01, v11), r + 1];
+                        case 'L': return [c, r + lerp(v00, v01)];
+                    }
+                };
+                cases.forEach(pair => segs.push([pt(pair[0]), pt(pair[1])]));
+            }
+        }
+        return segs;
+    }
+
+    function stitchSegments(segs) {
+        const key = (p) => p[0].toFixed(4) + ',' + p[1].toFixed(4);
+        const index = new Map();
+        segs.forEach((s, i) => {
+            [key(s[0]), key(s[1])].forEach(k => {
+                if (!index.has(k)) index.set(k, []);
+                index.get(k).push(i);
+            });
+        });
+
+        const used = new Array(segs.length).fill(false);
+        const lines = [];
+        const grow = (line, atEnd) => {
+            let moved = true;
+            while (moved) {
+                moved = false;
+                const p = atEnd ? line[line.length - 1] : line[0];
+                const cand = index.get(key(p)) || [];
+                for (let n = 0; n < cand.length; n++) {
+                    const j = cand[n];
+                    if (used[j]) continue;
+                    const s = segs[j];
+                    let next = null;
+                    if (key(s[0]) === key(p)) next = s[1];
+                    else if (key(s[1]) === key(p)) next = s[0];
+                    if (!next) continue;
+                    used[j] = true;
+                    if (atEnd) line.push(next); else line.unshift(next);
+                    moved = true;
+                    break;
+                }
+            }
+        };
+
+        for (let i = 0; i < segs.length; i++) {
+            if (used[i]) continue;
+            used[i] = true;
+            const line = [segs[i][0], segs[i][1]];
+            grow(line, true); grow(line, false);
+            lines.push(line);
+        }
+        return lines;
+    }
+
+    function gridToLatLng(grid, gx, gy) {
+        return [
+            grid.minLat + (gy / (grid.rows - 1)) * (grid.maxLat - grid.minLat),
+            grid.minLng + (gx / (grid.cols - 1)) * (grid.maxLng - grid.minLng)
+        ];
+    }
+
+    
+    let contourInfo = { levels: [], mode: '2D', z: 0, used: 0 };
+
+    function drawContour() {
+        const use3DSwitch = document.getElementById('ct3D').checked;
+        const opts = {
+            cells: Math.max(40, Math.min(400, parseInt(document.getElementById('ctGrid').value, 10) || 160)),
+            radius: parseFloat(document.getElementById('ctRadius').value) || 0,
+            power: parseFloat(document.getElementById('ctPower').value) || 2,
+            interval: Math.max(1, parseFloat(document.getElementById('ctInterval').value) || 5),
+            vWeight: Math.max(1, parseFloat(document.getElementById('ctVWeight').value) || 4)
+        };
+
+        const samples = collectSamples(use3DSwitch);
+        if (samples.length < 3) { contourInfo = { levels: [], mode: '-', z: 0, used: 0 }; return; }
+
+        const zs = new Set(samples.map(p => Math.round(p.z * 100) / 100));
+        const flat = zs.size <= 1;
+        const sliceZ = flat ? samples[0].z : floorElevation(getActiveFloor());
+
+        const grid = buildIdwGrid(samples, opts, sliceZ);
+        contourInfo = {
+            levels: [],
+            mode: flat ? '2D flat' : (use3DSwitch ? '3D slice' : '2D per floor'),
+            z: sliceZ,
+            used: grid ? grid.used : 0
+        };
+        if (!grid) return;
+
+        if (document.getElementById('ctFill').checked) {
+            activeMapGroup.addLayer(gridToImageOverlay(grid, 0.75));
+        }
+
+        const start = Math.ceil(grid.vMin / opts.interval) * opts.interval;
+        const levels = [];
+        for (let v = start; v <= grid.vMax; v += opts.interval) levels.push(v);
+        contourInfo.levels = levels.slice();
+
+        if (document.getElementById('ctLines').checked) {
+            levels.forEach(level => {
+                const segs = marchingSquares(grid, level);
+                if (!segs.length) return;
+                const color = rgbToHex(rsrpColor(level, grid.vMin, grid.vMax));
+
+                stitchSegments(segs).forEach(line => {
+                    if (line.length < 2) return;
+                    const latlngs = line.map(p => gridToLatLng(grid, p[0], p[1]));
+                    activeMapGroup.addLayer(L.polyline(latlngs, {
+                        renderer: myCanvasRenderer, color: color, weight: 3.5, opacity: 0.55
+                    }));
+                    activeMapGroup.addLayer(L.polyline(latlngs, {
+                        renderer: myCanvasRenderer, color: '#222', weight: 1.6, opacity: 0.85
+                    }).bindTooltip(level + ' dBm', { sticky: true }));
+
+                    if (document.getElementById('ctLabels').checked && latlngs.length > 12) {
+                        activeMapGroup.addLayer(L.marker(latlngs[Math.floor(latlngs.length / 2)], {
+                            interactive: false,
+                            icon: L.divIcon({ className: 'contour-label', html: String(level), iconSize: [26, 12], iconAnchor: [13, 6] })
+                        }));
+                    }
+                });
+            });
+        }
+
+        if (document.getElementById('ctPoints').checked) {
+            samples.forEach(pt => {
+                const onSlice = Math.abs(pt.z - sliceZ) < 0.01;
+                activeMapGroup.addLayer(L.circleMarker([pt.lat, pt.lng], {
+                    renderer: myCanvasRenderer,
+                    radius: onSlice ? 2.5 : 1.8,
+                    fillColor: onSlice ? '#000' : '#888',
+                    color: '#fff', weight: 0.6,
+                    fillOpacity: onSlice ? 0.85 : 0.5
+                }));
+            });
+        }
+    }
+
+    ['ctInterval', 'ctGrid', 'ctRadius', 'ctPower', 'ctVWeight', 'ctFill', 'ctLines', 'ctLabels', 'ctPoints', 'ct3D']
+        .forEach(id => document.getElementById(id).addEventListener('change', () => {
+            if (currentRenderMode === 'contour') updateAllLayers();
+        }));
+    document.getElementById('alwaysShowOutdoorChk').addEventListener('change', updateAllLayers);
+
+    /* DRAWING */
+    function updateAllLayers() {
+        activeMapGroup.clearLayers();
+
+        if (currentRenderMode === 'contour') {
+            drawContour();
+            updateLegendUI();
+            return;
+        }
+        updateLegendUI();
+
+        heatmapDatasets.forEach(item => {
+            if (!item.visible) return;
+            const pts = getVisiblePoints(item);
+            if (!pts.length) return;
+
+            if (currentRenderMode === 'heatmap') {
+                pts.forEach(pt => {
+                    activeMapGroup.addLayer(L.circle([pt.lat, pt.lng], {
+                        renderer: myCanvasRenderer,
+                        radius: pt.isOutdoor ? 3 : 1.5,
+                        fillColor: pt.category.color, color: pt.category.color,
+                        weight: 0, fillOpacity: 0.4, interactive: false
+                    }));
+                });
+            } else {
+                const floor = getFloor(item.floorId);
+                const floorName = floor ? floor.name : 'Outdoor';
+
+                for (let i = 0; i < pts.length - 1; i++) {
+                    activeMapGroup.addLayer(L.polyline(
+                        [[pts[i].lat, pts[i].lng], [pts[i + 1].lat, pts[i + 1].lng]], {
+                            renderer: myCanvasRenderer,
+                            color: pts[i].category ? pts[i].category.color : '#FF0000',
+                            weight: 3, opacity: 0.8
+                        }));
+                }
+                pts.forEach(pt => {
+                    activeMapGroup.addLayer(L.circleMarker([pt.lat, pt.lng], {
+                        renderer: myCanvasRenderer, radius: 4,
+                        fillColor: pt.category ? pt.category.color : '#FF0000',
+                        color: '#000', weight: 1, opacity: 1, fillOpacity: 0.9
+                    }).bindPopup('<b>' + (item.note || (pt.isOutdoor ? 'Outdoor Point' : 'Indoor Point')) + '</b><br>' +
+                        (pt.isOutdoor ? 'Outdoor (GPS)' : floorName) + '<br>RSRP: ' + pt.rsrp + ' dBm'));
+                });
+            }
+        });
+    }
+
+    function fitMapToAllData() {
+        const allBounds = [];
+        heatmapDatasets.forEach(item => {
+            if (!item.visible) return;
+            getVisiblePoints(item).forEach(pt => allBounds.push([pt.lat, pt.lng]));
+        });
+        floorPlans.forEach(f => {
+            if (!isFloorShown(f.id)) return;
+            frameCorners(f).forEach(c => allBounds.push(c));
+        });
+        if (allBounds.length) map.fitBounds(L.latLngBounds(allBounds), { padding: [30, 30] });
+    }
+    document.getElementById('fitBtn').addEventListener('click', fitMapToAllData);
+
+    /* LEGEND */
+    const legend = L.control({ position: 'bottomleft' });
+    legend.onAdd = function () {
+        const div = L.DomUtil.create('div', 'legend-control');
+        div.id = 'dynamicLegend';
+        return div;
+    };
+    legend.addTo(map);
+
+    function updateLegendUI() {
+        const legendDiv = document.getElementById('dynamicLegend');
+        if (!legendDiv) return;
+
+        const f = getActiveFloor();
+        const b = f ? getBuilding(f.buildingId) : null;
+        const shownCount = floorPlans.filter(x => isFloorShown(x.id)).length;
+        const floorLine = f
+            ? '<div style="font-size:10px;color:#555;margin-top:4px;">' +
+              (b ? b.name + ' - ' : '') + f.name +
+              (shownCount > 1 ? ' (+' + (shownCount - 1) + ' more shown)' : '') + '</div>'
+            : '';
+
+        if (currentRenderMode === 'heatmap') {
+            legendDiv.innerHTML =
+                '<div class="legend-title">RSRP Heatmap Intensity</div>' +
+                '<div class="heatmap-gradient-bar" style="height:14px;width:100%;border-radius:3px;background:linear-gradient(to right,#FF0000 0%,#FFFF00 50%,#00FF00 100%);margin:6px 0 4px 0;border:1px solid rgba(0,0,0,0.2);"></div>' +
+                '<div class="legend-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#333;">' +
+                '<span>Weak (&lt; -105)</span><span>Medium (-85 to -105)</span><span>Strong (&gt; -84 dBm)</span></div>' + floorLine;
+        } else if (currentRenderMode === 'route') {
+            legendDiv.innerHTML =
+                '<div class="legend-title">RSRP Route Signal</div>' +
+                '<div class="legend-step-bar" style="display:flex;gap:2px;margin:6px 0 4px 0;">' +
+                '<div class="legend-step" style="background:#00FF00;flex:1;text-align:center;font-size:10px;padding:2px 0;color:#000;font-weight:bold;">Strong</div>' +
+                '<div class="legend-step" style="background:#FFFF00;flex:1;text-align:center;font-size:10px;padding:2px 0;color:#000;font-weight:bold;">Medium</div>' +
+                '<div class="legend-step" style="background:#FF0000;flex:1;text-align:center;font-size:10px;padding:2px 0;color:#000;white-space:nowrap;font-weight:bold;">Weak</div></div>' +
+                '<div class="legend-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#333;">' +
+                '<span>&gt; -84 dBm</span><span>-85 to -105</span><span>&lt; -105 dBm</span></div>' + floorLine;
+        } else {
+            const lv = contourInfo.levels;
+            const range = lv.length
+                ? lv[0] + ' to ' + lv[lv.length - 1] + ' dBm, every ' + document.getElementById('ctInterval').value + ' dB'
+                : 'Not enough data for this slice';
+            legendDiv.innerHTML =
+                '<div class="legend-title">RSRP Contour - ' + contourInfo.mode + '</div>' +
+                '<div style="height:14px;width:100%;border-radius:3px;background:linear-gradient(to right,#FF0000 0%,#FFFF00 50%,#00FF00 100%);margin:6px 0 4px 0;border:1px solid rgba(0,0,0,0.2);"></div>' +
+                '<div style="font-size:10px;color:#333;">' + range + '</div>' +
+                '<div style="font-size:10px;color:#555;">Slice at ' + contourInfo.z.toFixed(1) + ' m, ' +
+                contourInfo.used + ' samples used</div>' + floorLine;
+        }
+    }
+
+    /* EXPORT */
+    function checkExportStatus() {
+        document.getElementById('saveMapBtn').disabled = !(floorPlans.length || heatmapDatasets.length);
+        document.getElementById('exportBtn').disabled = heatmapDatasets.length === 0;
+        document.getElementById('fitBtn').disabled = !(heatmapDatasets.length || floorPlans.length);
+    }
+
+    document.getElementById('exportBtn').addEventListener('click', function () {
+        if (!heatmapDatasets.length) return;
+
+        const missingFloorFiles = [];
+        let allConvertedData = [];
+        const fmt = (n) => (typeof n !== 'number' || isNaN(n)) ? n : "'" + n.toFixed(6);
+
+        heatmapDatasets.forEach(item => {
+            const floor = getFloor(item.floorId);
+            const building = floor ? getBuilding(floor.buildingId) : null;
+            const frame = getFloorFrame(floor);
+            const pts = getProcessedPoints(item, frame);   // every floor, not only the visible ones
+
+            if (!frame) {
+                const hasIndoorRows = item.rawData.some(row => {
+                    const hasGPS = item.latKey && item.lngKey &&
+                        !isNaN(parseFloat(row[item.latKey])) && !isNaN(parseFloat(row[item.lngKey])) &&
+                        (parseFloat(row[item.latKey]) !== 0 || parseFloat(row[item.lngKey]) !== 0);
+                    return !hasGPS;
+                });
+                if (hasIndoorRows && missingFloorFiles.indexOf(item.fileName) === -1) missingFloorFiles.push(item.fileName);
+            }
+
+            allConvertedData = allConvertedData.concat(pts.map(pt => ({
+                Heatmap_Note: item.note,
+                Source_File: item.fileName,
+                Building: building ? building.name : '',
+                Floor: floor ? floor.name : '',
+                Level: floor ? floor.level : '',
+                Height_m: floor ? floorElevation(floor).toFixed(2) : '',
+                Point_Type: pt.isOutdoor ? 'Outdoor (GPS)' : 'Indoor (Pixel -> GPS)',
+                GPS_Latitude: fmt(pt.lat),
+                GPS_Longitude: fmt(pt.lng),
+                'RSRP (dBm)': pt.rsrp
+            })));
+        });
+
+        if (missingFloorFiles.length) {
+            alert('These files hold indoor (pixel) rows but no floor is assigned, so those rows were skipped:\n\n' +
+                missingFloorFiles.join('\n') +
+                '\n\nUpload the plan, align it, then pick the floor in the layer list.');
+        }
+        if (!allConvertedData.length) {
+            alert('No exportable points found (no valid GPS or pixel coordinates).');
+            return;
+        }
+
+        const csvContent = Papa.unparse(allConvertedData, { delimiter: ',' });
+        const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'nbcc_rsrp_export_data.csv';
+        link.click();
+    });
+
+    document.getElementById('saveMapBtn').addEventListener('click', function () {
+        const btn = this;
+        btn.innerText = 'Processing...';
+        btn.disabled = true;
+
+        const controlsDiv = document.getElementById('controls');
+        const bar = document.getElementById('floorBar');
+        const barWasVisible = bar.classList.contains('visible');
+        const menuBtn = document.getElementById('menuToggle');
+        controlsDiv.classList.add('capturing');
+        menuBtn.classList.add('capturing');
+        bar.classList.remove('visible');
+
+        const restore = () => {
+            controlsDiv.classList.remove('capturing');
+            menuBtn.classList.remove('capturing');
+            if (barWasVisible) bar.classList.add('visible');
+            btn.innerText = 'Save Map as Image (PNG)';
+            btn.disabled = false;
+        };
+
+        html2canvas(document.getElementById('map'), { useCORS: true, allowTaint: false, logging: false })
+            .then(canvas => {
+                const f = getActiveFloor();
+                const link = document.createElement('a');
+                link.download = 'nbcc_rsrp_map' + (f ? '_' + f.name.replace(/\s+/g, '') : '') + '.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                restore();
+            })
+            .catch(err => { console.error(err); restore(); alert('Error generating map image!'); });
+    });
+
+    /*SIDEBAR + ACCORDION */
+    const controlsPanel = document.getElementById('controls');
+    const menuToggle = document.getElementById('menuToggle');
+
+    function setSidebar(open) {
+        controlsPanel.classList.toggle('open', open);
+        menuToggle.classList.toggle('active', open);
+        // Lets the floor bar slide clear of the sidebar on a wide screen
+        document.body.classList.toggle('sidebar-open', open);
+        menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    window.setSidebar = setSidebar;
+
+    menuToggle.addEventListener('click', () => setSidebar(!controlsPanel.classList.contains('open')));
+    document.getElementById('closeControlsBtn').addEventListener('click', () => setSidebar(false));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSidebar(false); });
+
+    // The sidebar sits over the map, so clicks and scrolls inside it must not
+    // reach Leaflet underneath.
+    L.DomEvent.disableClickPropagation(controlsPanel);
+    L.DomEvent.disableScrollPropagation(controlsPanel);
+    L.DomEvent.disableClickPropagation(menuToggle);
+
+    document.querySelectorAll('#controlsBody .acc-head').forEach(head => {
+        head.addEventListener('click', () => head.parentElement.classList.toggle('open'));
+    });
+
+    // Start open on a wide screen, closed on a phone where it covers everything
+    setSidebar(window.innerWidth > 700);
+
+    updateLegendUI();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+    // Injected by Flask from .env - see app.py. The anon key is meant to be
+    // public: it only works through Row Level Security.
+    window.SUPABASE_URL = "{{ supabase_url }}";
+    window.SUPABASE_ANON_KEY = "{{ supabase_anon_key }}";
+    window.SUPABASE_BUCKET = "{{ supabase_bucket }}";
+    window.LOGIN_PAGE = "{{ url_for('login') }}";
+</script>
+<script src="{{ url_for('static', filename='supabase-sync.js') }}"></script>
+
+</body>
+</html>
