@@ -56,7 +56,7 @@
 
 <div class="card">
     <h1>RF Mapping Tool</h1>
-    <p class="sub">Sign in to open your saved sites. Each account sees only its own data.</p>
+    <p class="sub">Sign in to open your saved sites.</p>
 
     <div class="tabs">
         <div class="tab active" id="tabSignIn">Sign in</div>
@@ -73,7 +73,7 @@
     <span class="link" id="forgotLink">Forgot your password?</span>
 
     <div class="msg" id="msg"></div>
-    <div class="hint">Data is stored in Supabase and protected by row level security.</div>
+    
 </div>
 
 <script>
@@ -97,8 +97,7 @@
         msg: document.getElementById('msg')
     };
 
-    // A missing #msg element must not take the whole login page down with it,
-    // so fall back to the console instead of throwing.
+    
     function say(text, kind) {
         if (!els.msg) { console[kind === 'error' ? 'error' : 'log'](text); return; }
         els.msg.textContent = text;
@@ -106,8 +105,7 @@
     }
     function clearMsg() { if (els.msg) els.msg.className = 'msg'; }
 
-    // Fail loudly instead of leaving a dead button: an empty URL means .env
-    // was not picked up, which is the most common setup mistake.
+    
     if (!window.SUPABASE_URL || !window.SUPABASE_ANON_KEY) {
         say('Supabase is not configured. Fill in .env and restart app.py.', 'error');
         els.submit.disabled = true;
@@ -116,8 +114,7 @@
     const sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
     let mode = 'signin';
 
-    // Tells the Flask side that a session exists, so it can route straight to
-    // the tool. It holds no token - only a flag.
+    
     function setSessionCookie() {
         document.cookie = 'sb-session=1; path=/; max-age=' + (60 * 60 * 24 * 7) + '; SameSite=Lax';
     }
