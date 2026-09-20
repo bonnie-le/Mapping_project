@@ -14,16 +14,16 @@ Credits:
 
 Built with these open source libraries, loaded from CDN:
 
-Library	                  Used for	                           Licence
-Leaflet	                  Map rendering and interaction	       BSD-2-Clause
-leaflet-control-geocoder  Place search	                       BSD-2-Clause
-Leaflet.heat	          Heat layer support	               BSD-2-Clause
-PapaParse	              CSV parsing	                       MIT
-SheetJS	                  Excel parsing	                       Apache-2.0
-html2canvas	              PNG export	                       MIT
-supabase-js	              Auth and database client	           MIT
-Flask	                  Serving the pages	                   BSD-3-Clause
-python-dotenv	          Reading .env	                       BSD-3-Clause
+
+Library Leaflet used for Map rendering and interaction, licence BSD-2-Clause
+Library leaflet-control-geocoder used for Place search, licence BSD-2-Clause
+Library Leaflet.heat used for Heat layer support, licence BSD-2-Clause
+Library PapaParse used for CSV parsing, licence MIT
+Library SheetJS	used for Excel parsing, licence Apache-2.0
+Library html2canvas	used for PNG export,	licence MIT
+Library supabase-js	used for Auth and database client, licence MIT
+Library Flask used for Serving the pages, licence BSD-3-Clause
+Library python-dotenv used for Reading .env, licence BSD-3-Clause
 
 Map data and tiles:
 
